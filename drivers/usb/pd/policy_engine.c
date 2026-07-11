@@ -359,7 +359,7 @@ static void *usbpd_ipc_log;
 #if defined(CONFIG_MACH_XIAOMI_VAYU) || defined(CONFIG_MACH_XIAOMI_NABU)
 #define PD_MAX_CURRENT_LIMIT		4000000
 #endif
-#define MAX_FIXED_PDO_MA		2500
+#define MAX_FIXED_PDO_MA		3000
 #define MAX_NON_COMPLIANT_PPS_UA		2000000
 #endif
 
