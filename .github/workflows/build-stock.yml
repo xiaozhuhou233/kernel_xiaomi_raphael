@@ -228,7 +228,6 @@ jobs:
           grep -n -B5 -A10 '&tlmm' \
             debug-dts/raphael-preprocessed.dts | head -80 || true
       - name: Debug Raphael DTBO only
-        continue-on-error: true
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
@@ -339,6 +338,7 @@ jobs:
             CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
+            DTC_EXT=/usr/bin/dtc \
             V=1 \
             dtbs \
             -j1
