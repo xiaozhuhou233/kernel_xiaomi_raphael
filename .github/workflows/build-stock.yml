@@ -398,8 +398,14 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- \
             DTC_EXT=/usr/bin/dtc \
             Image.gz-dtb \
-            dtbs \
+            dtbo.img \
             -j$(nproc)
+
+      - name: Package AnyKernel3
+        if: ${{ inputs.mode == 'full' }}
+        run: |
+          chmod +x scripts/package-anykernel3.sh
+          scripts/package-anykernel3.sh
 
       # ============================================================
       # Diagnostics
@@ -485,6 +491,8 @@ jobs:
           name: raphael-stock-60hz
           if-no-files-found: warn
           path: |
+            out/raphael-stock-ksunext-ak3.zip
+            out/raphael-stock-ksunext-ak3.zip.sha256
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image
