@@ -361,7 +361,31 @@ jobs:
       # ============================================================
       # Diagnostics
       # ============================================================
+      - name: Dump failed Raphael preprocessed DTS
+        if: always()
+        run: |
+          echo "========================================="
+          echo "=== Actual DTS passed to DTC ==="
+          echo "========================================="
 
+          FILE="out/arch/arm64/boot/dts/qcom/.raphael-sm8150-overlay.dtbo.dts.tmp"
+
+          if [ -f "$FILE" ]; then
+            echo "Found: $FILE"
+            echo
+            nl -ba "$FILE" | head -250
+          else
+            echo "DTS tmp file not found."
+
+            echo
+            echo "=== Available Raphael temp files ==="
+
+            find out/arch/arm64/boot/dts/qcom \
+              -maxdepth 1 \
+              -type f \
+              -name "*raphael*" \
+              -print || true
+          fi
       - name: Show ccache statistics
         if: always()
         run: |
