@@ -216,15 +216,14 @@ jobs:
       # DTS / DTBO
       # -------------------------------
 
-      - name: Quick test DTBs
+      - name: Quick test Raphael DTBO
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
-
           export ARCH=arm64
           export SUBARCH=arm64
 
           echo "========================================="
-          echo "=== Build DTBs / DTBOs ==="
+          echo "=== Build Raphael DTBO only ==="
           echo "========================================="
 
           make O=out \
@@ -234,11 +233,18 @@ jobs:
             CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            dtbs \
+            qcom/raphael-sm8150-overlay.dtbo \
             -j$(nproc)
 
           echo
-          echo "DTB test passed."
+          echo "=== Raphael DTBO output ==="
+
+          find out/arch/arm64/boot/dts/qcom \
+            -name "*raphael*.dtbo" \
+            -exec ls -lh {} \;
+
+          echo
+          echo "Raphael DTBO test passed."
 
       # -------------------------------
       # FULL BUILD
