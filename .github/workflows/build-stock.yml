@@ -226,26 +226,86 @@ jobs:
           echo "=== tlmm locations ==="
           grep -n -B5 -A10 '&tlmm' \
             debug-dts/raphael-preprocessed.dts | head -80 || true
-      - name: Debug DTBO build
+      - name: Debug Raphael DTBO only
         continue-on-error: true
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
 
-          echo "=== Makefile.dtbo ==="
-          cat scripts/Makefile.dtbo
+          echo "========================================="
+          echo "=== Force Raphael-only DTBO ==="
+          echo "========================================="
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("arch/arm64/boot/dts/qcom/Makefile")
+          text = p.read_text()
+
+          # 找到包含 raphael-sm8150-overlay.dtbo 的 dtbo 列表
+          pattern = re.compile(
+              r'(dtbo-\$\(CONFIG_ARCH_SM8150\)\s*\+=\s*\\\n'
+              r'(?:[ \t]+.*\\\n)*?'
+              r'[ \t]+.*raphael-sm8150-overlay\.dtbo(?:\s*\\)?(?:\n|$))'
+          )
+
+          matches = list(pattern.finditer(text))
+
+          if not matches:
+              print("ERROR: Cannot find SM8150 DTBO block containing Raphael")
+              print("=== Raphael references ===")
+              for i, line in enumerate(text.splitlines(), 1):
+                  if "raphael-sm8150-overlay.dtbo" in line:
+                      print(i, line)
+              raise SystemExit(1)
+
+          m = matches[0]
+
+          replacement = (
+              "dtbo-$(CONFIG_ARCH_SM8150) += \\\n"
+              "\traphael-sm8150-overlay.dtbo\n"
+          )
+
+          text = text[:m.start()] + replacement + text[m.end():]
+          p.write_text(text)
+
+          print("Raphael-only patch applied.")
+          PY
 
           echo
+          echo "========================================="
+          echo "=== VERIFY PATCH ==="
+          echo "========================================="
+
+          grep -n -B5 -A10 \
+            "raphael-sm8150-overlay.dtbo" \
+            arch/arm64/boot/dts/qcom/Makefile
+
+          echo
+          echo "=== Check Andromeda references ==="
+
+          if grep -n "andromeda-sm8150-overlay.dtbo" \
+            arch/arm64/boot/dts/qcom/Makefile; then
+
+            echo
+            echo "WARNING: Andromeda still exists somewhere in Makefile."
+          else
+            echo "Andromeda removed from active SM8150 DTBO list."
+          fi
+
+          echo
+          echo "========================================="
           echo "=== DTC version ==="
+          echo "========================================="
+
           out/scripts/dtc/dtc --version || true
 
           echo
-          echo "=== DTC help ==="
-          out/scripts/dtc/dtc --help | head -80 || true
-
-          echo
-          echo "=== Build with verbose commands ==="
+          echo "========================================="
+          echo "=== Build Raphael DTBO - V=1 ==="
+          echo "========================================="
 
           make O=out \
             ARCH=arm64 \
@@ -257,39 +317,16 @@ jobs:
             V=1 \
             dtbs \
             -j1
-      - name: Upload DTS debug
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: raphael-dts-debug
-          path: debug-dts/raphael-preprocessed.dts
-      # ============================================================
-      # FULL BUILD
-      # ============================================================
 
-      - name: Build full kernel
-        if: ${{ inputs.mode == 'full' }}
-        run: |
-          export PATH="$HOME/tc/r547379/bin:$PATH"
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-
-          export KBUILD_BUILD_USER=xiaozhuhou233
-          export KBUILD_BUILD_HOST=GitHub-Actions
-
+          echo
           echo "========================================="
-          echo "=== Full Raphael kernel build ==="
+          echo "=== Raphael output ==="
           echo "========================================="
 
-          make O=out \
-            ARCH=arm64 \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CC="ccache clang" \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            -j$(nproc)
+          find out/arch/arm64/boot/dts/qcom \
+            -type f \
+            -name "*raphael*.dtbo" \
+            -exec ls -lh {} \;
 
       # ============================================================
       # Diagnostics
