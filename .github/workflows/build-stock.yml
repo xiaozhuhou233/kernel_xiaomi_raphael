@@ -5,12 +5,17 @@ on:
 
 jobs:
   build:
-    name: Build Raphael 4.14 Stock
-    runs-on: ubuntu-22.04
+    name: Build Raphael Stock 60Hz
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout kernel
+      - name: Checkout kernel source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Install dependencies
         run: |
@@ -26,111 +31,99 @@ jobs:
             libelf-dev \
             libssl-dev \
             libncurses-dev \
+            lld \
+            llvm \
             python3 \
+            rsync \
             unzip \
             wget \
             zip
 
-      - name: Download Clang r383902
+      - name: Download AOSP Clang r547379
         run: |
-          cd "$GITHUB_WORKSPACE"
+          mkdir -p "$HOME/tc"
 
           git clone \
             --depth=1 \
-            --branch android-11.0.0_r1 \
+            --branch android-16.0.0_r1 \
             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-            clang-repo
+            "$HOME/tc/clang-repo"
 
-          test -d clang-repo/clang-r383902
-          mv clang-repo/clang-r383902 clang
-          rm -rf clang-repo
+          test -d "$HOME/tc/clang-repo/clang-r547379"
+
+          mv "$HOME/tc/clang-repo/clang-r547379" \
+             "$HOME/tc/r547379"
+
+          rm -rf "$HOME/tc/clang-repo"
 
           echo "=== Clang ==="
-          ./clang/bin/clang --version
+          "$HOME/tc/r547379/bin/clang" --version
 
           echo "=== LLD ==="
-          ./clang/bin/ld.lld --version
+          "$HOME/tc/r547379/bin/ld.lld" --version
 
-      - name: Download GCC 4.9 binutils
+      - name: Configure Raphael
         run: |
-          cd "$GITHUB_WORKSPACE"
-
-          git clone \
-            --depth=1 \
-            --branch android-12.1.0_r27 \
-            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-            gcc
-
-          echo "=== GNU binutils ==="
-          ls -l gcc/bin/aarch64-linux-androidkernel-* || true
-
-          echo "=== Check required tools ==="
-          test -x gcc/bin/aarch64-linux-androidkernel-ld
-          test -x gcc/bin/aarch64-linux-androidkernel-as
-          test -x gcc/bin/aarch64-linux-androidkernel-ar
-          test -x gcc/bin/aarch64-linux-androidkernel-nm
-          test -x gcc/bin/aarch64-linux-androidkernel-objcopy
-
-          gcc/bin/aarch64-linux-androidkernel-ld --version
-
-      - name: Configure kernel
-        run: |
+          export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc/bin:$PATH"
+          export SUBARCH=arm64
+          export KBUILD_BUILD_USER=xiaozhuhou233
+          export KBUILD_BUILD_HOST=GitHub-Actions
+
+          ccache -M 5G
+          ccache -z
 
           make O=out \
             ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-androidkernel- \
-            vendor/sm8150-perf_defconfig
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            raphael_defconfig
+
+          echo "=== Config ==="
+          grep -E "CONFIG_MACH_XIAOMI_RAPHAEL|CONFIG_BUILD_ARM64_DT_OVERLAY" \
+            out/.config || true
 
       - name: Build kernel
         run: |
+          export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc/bin:$PATH"
+          export SUBARCH=arm64
+          export KBUILD_BUILD_USER=xiaozhuhou233
+          export KBUILD_BUILD_HOST=GitHub-Actions
 
-          make -j$(nproc) \
-            O=out \
+          make O=out \
             ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-androidkernel-
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            -j$(nproc)
 
-      - name: Check outputs
+      - name: Show build outputs
         run: |
-          echo "=== Kernel outputs ==="
-          ls -lh out/arch/arm64/boot/ || true
+          echo "=== arch/arm64/boot ==="
+          find out/arch/arm64/boot \
+            -maxdepth 2 \
+            -type f \
+            \( -name "Image*" -o -name "*.dtb" -o -name "*.dtbo" -o -name "dtbo.img" \) \
+            -exec ls -lh {} \; || true
 
-          test -f out/arch/arm64/boot/Image
+          echo "=== Expected Raphael outputs ==="
 
-          echo "Image built successfully:"
-          ls -lh out/arch/arm64/boot/Image
-
-          if [ -f out/arch/arm64/boot/Image.gz ]; then
-            echo "Image.gz:"
-            ls -lh out/arch/arm64/boot/Image.gz
-          fi
+          test -f out/arch/arm64/boot/Image.gz-dtb
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
 
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            echo "DTBO:"
             ls -lh out/arch/arm64/boot/dtbo.img
           fi
 
-      - name: Upload Image
+      - name: Upload stock kernel
         uses: actions/upload-artifact@v4
         with:
-          name: raphael-stock-Image
-          path: out/arch/arm64/boot/Image
-
-      - name: Upload additional outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: raphael-stock-extra
-          if-no-files-found: ignore
+          name: raphael-stock-60hz
+          if-no-files-found: error
           path: |
-            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
-            out/System.map
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/Image.gz
