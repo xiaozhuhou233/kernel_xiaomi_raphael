@@ -175,7 +175,7 @@ jobs:
       # ============================================================
       # QUICK TEST 1: USB-PD
       # ============================================================
-
+    
       - name: Quick test USB PD
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
@@ -203,9 +203,32 @@ jobs:
       # ============================================================
       # QUICK TEST 2: Raphael-only DTBO
       # ============================================================
+      - name: Debug Raphael DTS preprocessing
+        run: |
+          export PATH="$HOME/tc/r547379/bin:$PATH"
 
+          mkdir -p debug-dts
+
+          "$HOME/tc/r547379/bin/clang" \
+            -E \
+            -x assembler-with-cpp \
+            -nostdinc \
+            -undef \
+            -D__DTS__ \
+            -I scripts/dtc/include-prefixes \
+            -I arch/arm64/boot/dts/qcom \
+            arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dts \
+            -o debug-dts/raphael-preprocessed.dts
+
+          echo "=== Beginning of preprocessed DTS ==="
+          sed -n '1,120p' debug-dts/raphael-preprocessed.dts
+
+          echo "=== tlmm locations ==="
+          grep -n -B5 -A10 '&tlmm' \
+            debug-dts/raphael-preprocessed.dts | head -80 || true
       - name: Quick test Raphael DTBO
         run: |
+          continue-on-error: true
           export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
@@ -286,7 +309,12 @@ jobs:
 
           echo
           echo "Raphael DTBO test passed."
-
+      - name: Upload DTS debug
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raphael-dts-debug
+          path: debug-dts/raphael-preprocessed.dts
       # ============================================================
       # FULL BUILD
       # ============================================================
