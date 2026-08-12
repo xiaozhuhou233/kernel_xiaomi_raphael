@@ -231,11 +231,12 @@ jobs:
             CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            -f ../scripts/Makefile.build \
+            -f scripts/Makefile.build \
             obj=arch/arm64/boot/dts/qcom \
-            arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
+            arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
+            -j$(nproc)
 
-          echo "=== Output ==="
+          echo "=== Raphael DTBO output ==="
 
           ls -lh \
             out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
