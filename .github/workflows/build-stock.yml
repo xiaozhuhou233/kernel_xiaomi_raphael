@@ -127,3 +127,12 @@ jobs:
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/Image.gz
+
+      - name: Check source version
+        run: |
+          echo "=== COMMIT ==="
+          git rev-parse HEAD
+
+          echo "=== USB PD verified/verifed ==="
+          grep -n -E "verified|verifed" \
+            drivers/usb/pd/policy_engine.c | head -50
