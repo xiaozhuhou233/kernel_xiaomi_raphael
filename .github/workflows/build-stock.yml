@@ -73,15 +73,20 @@ jobs:
           ccache -M 5G
           ccache -z
 
+          echo "=== Available configs ==="
+          find arch/arm64/configs -type f | grep -E "raphael|sm8150" | sort
+
           make O=out \
             ARCH=arm64 \
             LLVM=1 \
             LLVM_IAS=1 \
             CC="ccache clang" \
-            raphael_defconfig
+            vendor/sm8150-perf_defconfig
 
-          echo "=== Config ==="
-          grep -E "CONFIG_MACH_XIAOMI_RAPHAEL|CONFIG_BUILD_ARM64_DT_OVERLAY" \
+          echo "=== Config generated ==="
+          test -f out/.config
+          grep -E \
+            "CONFIG_BUILD_ARM64_UNCOMPRESSED_KERNEL|CONFIG_BUILD_ARM64_DT_OVERLAY" \
             out/.config || true
 
       - name: Build kernel
