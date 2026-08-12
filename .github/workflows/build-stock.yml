@@ -210,7 +210,56 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
 
-          echo "=== Prepare kernel ==="
+          echo "========================================="
+          echo "=== Limit Xiaomi SM8150 DTBO to Raphael ==="
+          echo "========================================="
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("arch/arm64/boot/dts/qcom/Makefile")
+          text = path.read_text()
+
+          old = """\
+          \tdtbo-$(CONFIG_ARCH_SM8150) += \\
+          \t\tandromeda-sm8150-overlay.dtbo \\
+          \t\tandromeda-sm8150-p1-overlay.dtbo \\
+          \t\tandromeda-sm8150-p1_1-overlay.dtbo \\
+          \t\tandromeda-sm8150-p2-overlay.dtbo \\
+          \t\tandromeda-sm8150-p2_1-overlay.dtbo \\
+          \t\tandromeda-sm8150-p2_2-overlay.dtbo \\
+          \t\tandromeda-sm8150-p2_21-overlay.dtbo \\
+          \t\tandromeda-sm8150-p2_22-overlay.dtbo \\
+          \t\tcepheus-sm8150-overlay.dtbo \\
+          \t\tcrux-sm8150-overlay.dtbo \\
+          \t\tnabu-sm8150-overlay.dtbo \\
+          \t\traphael-sm8150-overlay.dtbo \\
+          \t\tvayu-sm8150-overlay.dtbo
+          """
+
+          new = """\
+          \tdtbo-$(CONFIG_ARCH_SM8150) += \\
+          \t\traphael-sm8150-overlay.dtbo
+          """
+
+          if old not in text:
+              raise SystemExit("ERROR: Xiaomi SM8150 DTBO list not found")
+
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          print("Raphael-only DTBO list applied.")
+          PY
+
+          echo
+          echo "=== Verify DTBO list ==="
+          grep -n -A5 -B2 "raphael-sm8150-overlay.dtbo" \
+            arch/arm64/boot/dts/qcom/Makefile | head -30
+
+          echo
+          echo "========================================="
+          echo "=== Build Raphael DTB/DTBO ==="
+          echo "========================================="
 
           make O=out \
             ARCH=arm64 \
@@ -219,27 +268,24 @@ jobs:
             CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            prepare scripts
-
-          echo "=== Build Raphael DTBO only ==="
-
-          make \
-            O=out \
-            ARCH=arm64 \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CC="ccache clang" \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            -f scripts/Makefile.build \
-            obj=arch/arm64/boot/dts/qcom \
-            arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
+            dtbs \
             -j$(nproc)
 
+          echo
+          echo "========================================="
           echo "=== Raphael DTBO output ==="
+          echo "========================================="
 
-          ls -lh \
+          find out/arch/arm64/boot/dts/qcom \
+            -type f \
+            \( -name "*raphael*.dtbo" -o -name "*xiaomi*.dtb" \) \
+            -exec ls -lh {} \;
+
+          test -f \
             out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
+
+          echo
+          echo "Raphael DTBO test passed."
 
       # ============================================================
       # FULL BUILD
