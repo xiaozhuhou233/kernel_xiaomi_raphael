@@ -61,8 +61,11 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
             gcc
 
-          echo "=== GCC ==="
-          ./gcc/bin/aarch64-linux-android-gcc --version
+          echo "=== GCC binaries ==="
+          ls -la ./gcc/bin/ | grep aarch64 | head -30
+
+          echo "=== GCC version ==="
+          ./gcc/bin/aarch64-linux-androidkernel-gcc --version
 
       - name: Configure kernel
         run: |
@@ -74,7 +77,7 @@ jobs:
             CC=clang \
             LD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE=aarch64-linux-androidkernel- \
             vendor/sm8150-perf_defconfig
 
       - name: Build kernel
@@ -88,7 +91,7 @@ jobs:
             CC=clang \
             LD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android-
+            CROSS_COMPILE=aarch64-linux-androidkernel-
 
       - name: Check outputs
         run: |
