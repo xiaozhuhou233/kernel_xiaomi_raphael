@@ -398,8 +398,16 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- \
             DTC_EXT=/usr/bin/dtc \
             Image.gz-dtb \
-            dtbo.img \
+            dtbs \
             -j$(nproc)
+
+          python3 scripts/dtc/mkdtboimg.py create \
+            out/arch/arm64/boot/dtbo.img \
+            --page_size=4096 \
+            out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
+
+          python3 scripts/dtc/mkdtboimg.py dump \
+            out/arch/arm64/boot/dtbo.img
 
       - name: Package AnyKernel3
         if: ${{ inputs.mode == 'full' }}
