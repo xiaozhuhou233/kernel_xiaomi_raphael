@@ -227,8 +227,8 @@ jobs:
           grep -n -B5 -A10 '&tlmm' \
             debug-dts/raphael-preprocessed.dts | head -80 || true
       - name: Quick test Raphael DTBO
+        continue-on-error: true
         run: |
-          continue-on-error: true
           export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
