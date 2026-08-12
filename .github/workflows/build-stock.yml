@@ -207,13 +207,10 @@ jobs:
       - name: Quick test Raphael DTBO
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
-
           export ARCH=arm64
           export SUBARCH=arm64
 
-          echo "========================================="
-          echo "=== Build Raphael DTBO only ==="
-          echo "========================================="
+          echo "=== Prepare kernel ==="
 
           make O=out \
             ARCH=arm64 \
@@ -222,18 +219,26 @@ jobs:
             CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            qcom/raphael-sm8150-overlay.dtbo \
-            -j$(nproc)
+            prepare scripts
 
-          echo
-          echo "=== Raphael DTBO output ==="
+          echo "=== Build Raphael DTBO only ==="
 
-          find out/arch/arm64/boot/dts/qcom \
-            -name "*raphael*.dtbo" \
-            -exec ls -lh {} \; || true
+          make \
+            O=out \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            -f ../scripts/Makefile.build \
+            obj=arch/arm64/boot/dts/qcom \
+            arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
 
-          echo
-          echo "Raphael DTBO test passed."
+          echo "=== Output ==="
+
+          ls -lh \
+            out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
 
       # ============================================================
       # FULL BUILD
