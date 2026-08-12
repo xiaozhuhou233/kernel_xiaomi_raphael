@@ -1,0 +1,127 @@
+name: Build Raphael Stock Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Raphael 4.14 Stock
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            git \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            python3 \
+            unzip \
+            wget \
+            zip
+
+      - name: Download Clang r383902
+        run: |
+          cd "$GITHUB_WORKSPACE"
+
+          git clone \
+            --depth=1 \
+            --branch android-11.0.0_r1 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            clang-repo
+
+          test -d clang-repo/clang-r383902
+          mv clang-repo/clang-r383902 clang
+          rm -rf clang-repo
+
+          echo "=== Clang ==="
+          ./clang/bin/clang --version
+
+          echo "=== LLD ==="
+          ./clang/bin/ld.lld --version
+
+      - name: Download GCC 4.9
+        run: |
+          cd "$GITHUB_WORKSPACE"
+
+          git clone \
+            --depth=1 \
+            --branch android-12.1.0_r27 \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            gcc
+
+          echo "=== GCC ==="
+          ./gcc/bin/aarch64-linux-android-gcc --version
+
+      - name: Configure kernel
+        run: |
+          export ARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc/bin:$PATH"
+
+          make O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            vendor/sm8150-perf_defconfig
+
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc/bin:$PATH"
+
+          make -j$(nproc) \
+            O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android-
+
+      - name: Check outputs
+        run: |
+          echo "=== Kernel outputs ==="
+          ls -lh out/arch/arm64/boot/ || true
+
+          test -f out/arch/arm64/boot/Image
+
+          echo "Image built successfully:"
+          ls -lh out/arch/arm64/boot/Image
+
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            echo "Image.gz:"
+            ls -lh out/arch/arm64/boot/Image.gz
+          fi
+
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            echo "DTBO:"
+            ls -lh out/arch/arm64/boot/dtbo.img
+          fi
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: raphael-stock-Image
+          path: out/arch/arm64/boot/Image
+
+      - name: Upload additional outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: raphael-stock-extra
+          if-no-files-found: ignore
+          path: |
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/dtbo.img
+            out/System.map
