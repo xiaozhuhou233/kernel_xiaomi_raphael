@@ -239,61 +239,85 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           p = Path("arch/arm64/boot/dts/qcom/Makefile")
-          text = p.read_text()
+          lines = p.read_text().splitlines()
 
-          # 找到包含 raphael-sm8150-overlay.dtbo 的 dtbo 列表
-          pattern = re.compile(
-              r'(dtbo-\$\(CONFIG_ARCH_SM8150\)\s*\+=\s*\\\n'
-              r'(?:[ \t]+.*\\\n)*?'
-              r'[ \t]+.*raphael-sm8150-overlay\.dtbo(?:\s*\\)?(?:\n|$))'
-          )
+          raphael_line = None
+          start = None
+          end = None
 
-          matches = list(pattern.finditer(text))
+          # 找 Raphael DTBO
+          for i, line in enumerate(lines):
+              if "raphael-sm8150-overlay.dtbo" in line and "-base" not in line:
+                  raphael_line = i
+                  break
 
-          if not matches:
-              print("ERROR: Cannot find SM8150 DTBO block containing Raphael")
-              print("=== Raphael references ===")
-              for i, line in enumerate(text.splitlines(), 1):
-                  if "raphael-sm8150-overlay.dtbo" in line:
-                      print(i, line)
-              raise SystemExit(1)
+          if raphael_line is None:
+              raise SystemExit(
+                  "ERROR: Cannot find raphael-sm8150-overlay.dtbo"
+              )
 
-          m = matches[0]
+          # 向上寻找这个 dtbo-$(CONFIG_ARCH_SM8150) += 块的开始
+          for i in range(raphael_line, -1, -1):
+              if "dtbo-$(CONFIG_ARCH_SM8150)" in lines[i]:
+                  start = i
+                  break
 
-          replacement = (
-              "dtbo-$(CONFIG_ARCH_SM8150) += \\\n"
-              "\traphael-sm8150-overlay.dtbo\n"
-          )
+          if start is None:
+              raise SystemExit("ERROR: Cannot find DTBO block start")
 
-          text = text[:m.start()] + replacement + text[m.end():]
-          p.write_text(text)
+          # 向下找连续的反斜杠列表结束位置
+          end = start
 
-          print("Raphael-only patch applied.")
+          while end < len(lines):
+              current = lines[end].rstrip()
+
+              if end == start:
+                  end += 1
+                  continue
+
+              # 当前行没有 \，说明这是列表最后一项
+              if not current.endswith("\\"):
+                  break
+
+              end += 1
+
+          # end 现在指向列表最后一项
+          print("Original block:")
+          for line in lines[start:end + 1]:
+              print(line)
+
+          new_block = [
+              "dtbo-$(CONFIG_ARCH_SM8150) += \\",
+              "\traphael-sm8150-overlay.dtbo",
+          ]
+
+          lines[start:end + 1] = new_block
+
+          p.write_text("\n".join(lines) + "\n")
+
+          print()
+          print("New block:")
+          for line in new_block:
+              print(line)
           PY
 
           echo
           echo "========================================="
-          echo "=== VERIFY PATCH ==="
+          echo "=== VERIFY MAKEFILE ==="
           echo "========================================="
 
-          grep -n -B5 -A10 \
-            "raphael-sm8150-overlay.dtbo" \
-            arch/arm64/boot/dts/qcom/Makefile
+          sed -n '1,35p' arch/arm64/boot/dts/qcom/Makefile
 
           echo
-          echo "=== Check Andromeda references ==="
+          echo "========================================="
+          echo "=== Check active DTBO list ==="
+          echo "========================================="
 
-          if grep -n "andromeda-sm8150-overlay.dtbo" \
-            arch/arm64/boot/dts/qcom/Makefile; then
-
-            echo
-            echo "WARNING: Andromeda still exists somewhere in Makefile."
-          else
-            echo "Andromeda removed from active SM8150 DTBO list."
-          fi
+          grep -n \
+            "dtbo-\$(CONFIG_ARCH_SM8150)" \
+            arch/arm64/boot/dts/qcom/Makefile || true
 
           echo
           echo "========================================="
@@ -327,6 +351,12 @@ jobs:
             -type f \
             -name "*raphael*.dtbo" \
             -exec ls -lh {} \;
+
+          test -f \
+            out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo
+
+          echo
+          echo "Raphael DTBO test PASSED."
 
       # ============================================================
       # Diagnostics
