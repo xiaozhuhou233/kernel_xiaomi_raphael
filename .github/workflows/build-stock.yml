@@ -1,4 +1,4 @@
-name: Build Raphael Stock Kernel
+﻿name: Build Raphael Stock Kernel
 
 on:
   workflow_dispatch:
@@ -59,7 +59,8 @@ jobs:
             rsync \
             unzip \
             wget \
-            zip
+            zip \
+            device-tree-compiler
 
       # ============================================================
       # Restore prebuilt AOSP Clang
@@ -357,6 +358,27 @@ jobs:
 
           echo
           echo "Raphael DTBO test PASSED."
+
+      - name: Test Raphael with system DTC
+        if: always()
+        run: |
+          echo "=== System DTC ==="
+          /usr/bin/dtc --version
+
+          FILE="out/arch/arm64/boot/dts/qcom/.raphael-sm8150-overlay.dtbo.dts.tmp"
+          OUTPUT="/tmp/raphael-system-dtc.dtbo"
+
+          echo "=== Compile the exact Kbuild preprocessed DTS ==="
+          test -f "$FILE"
+          /usr/bin/dtc \
+            -O dtb \
+            -o "$OUTPUT" \
+            -b 0 \
+            -@ \
+            "$FILE"
+
+          echo "=== System DTC result ==="
+          ls -lh "$OUTPUT"
 
       # ============================================================
       # Diagnostics
