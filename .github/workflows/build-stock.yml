@@ -51,7 +51,7 @@ jobs:
           echo "=== LLD ==="
           ./clang/bin/ld.lld --version
 
-      - name: Download GCC 4.9
+      - name: Download GCC 4.9 binutils
         run: |
           cd "$GITHUB_WORKSPACE"
 
@@ -61,11 +61,17 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
             gcc
 
-          echo "=== GCC binaries ==="
-          ls -la ./gcc/bin/ | grep aarch64 | head -30
+          echo "=== GNU binutils ==="
+          ls -l gcc/bin/aarch64-linux-androidkernel-* || true
 
-          echo "=== GCC version ==="
-          ./gcc/bin/aarch64-linux-androidkernel-gcc --version
+          echo "=== Check required tools ==="
+          test -x gcc/bin/aarch64-linux-androidkernel-ld
+          test -x gcc/bin/aarch64-linux-androidkernel-as
+          test -x gcc/bin/aarch64-linux-androidkernel-ar
+          test -x gcc/bin/aarch64-linux-androidkernel-nm
+          test -x gcc/bin/aarch64-linux-androidkernel-objcopy
+
+          gcc/bin/aarch64-linux-androidkernel-ld --version
 
       - name: Configure kernel
         run: |
