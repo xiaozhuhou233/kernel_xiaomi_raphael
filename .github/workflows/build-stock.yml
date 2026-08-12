@@ -11,7 +11,47 @@ on:
         options:
           - quick
           - full
+name: Prepare Raphael Toolchain
 
+on:
+  workflow_dispatch:
+
+jobs:
+  prepare-clang:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Cache AOSP Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ~/tc/r547379
+          key: aosp-clang-r547379-v1
+
+      - name: Download AOSP Clang r547379
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/tc"
+
+          git clone \
+            --depth=1 \
+            --branch android-16.0.0_r1 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            "$HOME/tc/clang-repo"
+
+          test -d "$HOME/tc/clang-repo/clang-r547379"
+
+          mv "$HOME/tc/clang-repo/clang-r547379" \
+             "$HOME/tc/r547379"
+
+          rm -rf "$HOME/tc/clang-repo"
+
+      - name: Verify Clang
+        run: |
+          "$HOME/tc/r547379/bin/clang" --version
+          "$HOME/tc/r547379/bin/ld.lld" --version
+
+          echo "Toolchain cache preparation completed."
 jobs:
   build:
     name: Build Raphael Stock 60Hz
