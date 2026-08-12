@@ -73,6 +73,7 @@ jobs:
           ccache -M 5G
           ccache -z
 
+          # Base SM8150 config
           make O=out \
             ARCH=arm64 \
             LLVM=1 \
@@ -81,6 +82,29 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             vendor/sm8150-perf_defconfig
+
+          # Merge Xiaomi common + Raphael fragments
+          ./scripts/kconfig/merge_config.sh \
+            -m \
+            -O out \
+            out/.config \
+            arch/arm64/configs/vendor/xiaomi/sm8150-common.config \
+            arch/arm64/configs/vendor/xiaomi/raphael.config
+
+          # Resolve Kconfig dependencies
+          make O=out \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig
+
+          echo "=== Important Raphael config ==="
+          grep -E \
+            "CONFIG_MACH_XIAOMI|CONFIG_MACH_XIAOMI_RAPHAEL|CONFIG_BUILD_ARM64_DT_OVERLAY" \
+            out/.config || true
 
       - name: Build kernel
         run: |
