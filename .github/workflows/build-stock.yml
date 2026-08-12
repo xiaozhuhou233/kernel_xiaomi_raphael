@@ -205,6 +205,7 @@ jobs:
       # QUICK TEST 2: Raphael-only DTBO
       # ============================================================
       - name: Debug Raphael DTS preprocessing
+        if: ${{ inputs.mode == 'quick' }}
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
 
@@ -228,6 +229,7 @@ jobs:
           grep -n -B5 -A10 '&tlmm' \
             debug-dts/raphael-preprocessed.dts | head -80 || true
       - name: Debug Raphael DTBO only
+        if: ${{ inputs.mode == 'quick' }}
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
           export ARCH=arm64
@@ -360,7 +362,7 @@ jobs:
           echo "Raphael DTBO test PASSED."
 
       - name: Test Raphael with system DTC
-        if: always()
+        if: ${{ inputs.mode == 'quick' }}
         run: |
           echo "=== System DTC ==="
           /usr/bin/dtc --version
@@ -380,11 +382,30 @@ jobs:
           echo "=== System DTC result ==="
           ls -lh "$OUTPUT"
 
+      - name: Build kernel and device trees
+        if: ${{ inputs.mode == 'full' }}
+        run: |
+          export PATH="$HOME/tc/r547379/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          make O=out \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            DTC_EXT=/usr/bin/dtc \
+            Image.gz-dtb \
+            dtbs \
+            -j$(nproc)
+
       # ============================================================
       # Diagnostics
       # ============================================================
       - name: Dump failed Raphael preprocessed DTS
-        if: always()
+        if: ${{ failure() && inputs.mode == 'quick' }}
         run: |
           echo "========================================="
           echo "=== Actual DTS passed to DTC ==="
