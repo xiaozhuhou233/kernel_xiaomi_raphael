@@ -226,7 +226,7 @@ jobs:
           echo "=== tlmm locations ==="
           grep -n -B5 -A10 '&tlmm' \
             debug-dts/raphael-preprocessed.dts | head -80 || true
-       - name: Debug DTBO build
+      - name: Debug DTBO build
         continue-on-error: true
         run: |
           export PATH="$HOME/tc/r547379/bin:$PATH"
