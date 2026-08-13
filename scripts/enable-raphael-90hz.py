@@ -64,7 +64,7 @@ def timing_block(text: str) -> tuple[int, int, str]:
 
 def add_switch_command(block: str, d1: str) -> str:
     anchor = '\t\t\t\tqcom,mdss-dsi-on-command-state = "dsi_lp_mode";'
-    switch = f'''\n+
+    switch = f'''\n
 \t\t\t\tqcom,mdss-dsi-timing-switch-command = [
 \t\t\t\t\t39 00 00 00 00 00 03 F0 5A 5A
 \t\t\t\t\t39 00 00 00 00 00 03 FC 5A 5A
