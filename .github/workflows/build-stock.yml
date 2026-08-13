@@ -485,7 +485,7 @@ jobs:
           scripts/package-anykernel3.sh \
             out/arch/arm64/boot/Image.gz-dtb \
             out/arch/arm64/boot/dtbo.img \
-            out/raphael-90hz-v2-ksunext-ak3.zip
+            out/raphael-90hz-boolx-test-ksunext-ak3.zip
 
       # ============================================================
       # Diagnostics
@@ -568,11 +568,11 @@ jobs:
         if: ${{ inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
-          name: raphael-60-90hz-v2
+          name: raphael-60-90hz-boolx-test
           if-no-files-found: warn
           path: |
-            out/raphael-90hz-v2-ksunext-ak3.zip
-            out/raphael-90hz-v2-ksunext-ak3.zip.sha256
+            out/raphael-90hz-boolx-test-ksunext-ak3.zip
+            out/raphael-90hz-boolx-test-ksunext-ak3.zip.sha256
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image
