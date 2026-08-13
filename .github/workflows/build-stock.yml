@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build Raphael Stock 60Hz
+    name: Build Raphael 60/90Hz
     runs-on: ubuntu-24.04
 
     permissions:
@@ -25,6 +25,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Enable Raphael 60/90 Hz modes
+        run: |
+          python3 scripts/enable-raphael-90hz.py
+
+          echo "=== Added refresh-rate modes ==="
+          grep -R -n -E \
+            'timing@1|panel-framerate = <(60|90)>|panel-clockrate = <1500000000>' \
+            arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display/dsi-panel-ss-fhd-ea8076*-cmd.dtsi
 
       - name: Check source version
         run: |
@@ -101,6 +110,8 @@ jobs:
         with:
           path: out
           key: raphael-out-${{ runner.os }}-r547379-${{ steps.kernel-cache-key.outputs.sha }}
+          restore-keys: |
+            raphael-out-${{ runner.os }}-r547379-
 
       # ============================================================
       # ccache
@@ -409,6 +420,7 @@ jobs:
           export SUBARCH=arm64
 
           if [ "${{ steps.kernel-out-cache.outputs.cache-hit }}" = "true" ] && \
+             [ -f out/.raphael-90hz-cache ] && \
              [ -s out/arch/arm64/boot/Image.gz-dtb ] && \
              [ -s out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo ]; then
             echo "Reusing cached kernel and Raphael DTBO."
@@ -424,6 +436,8 @@ jobs:
               Image.gz-dtb \
               dtbs \
               -j$(nproc)
+
+            touch out/.raphael-90hz-cache
           fi
 
       - name: Save kernel output cache
@@ -448,7 +462,10 @@ jobs:
         if: ${{ inputs.mode == 'full' }}
         run: |
           chmod +x scripts/package-anykernel3.sh
-          scripts/package-anykernel3.sh
+          scripts/package-anykernel3.sh \
+            out/arch/arm64/boot/Image.gz-dtb \
+            out/arch/arm64/boot/dtbo.img \
+            out/raphael-90hz-ksunext-ak3.zip
 
       # ============================================================
       # Diagnostics
@@ -527,15 +544,15 @@ jobs:
             ls -lh out/arch/arm64/boot/dtbo.img
           fi
 
-      - name: Upload stock kernel
+      - name: Upload 60/90 Hz kernel
         if: ${{ inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
-          name: raphael-stock-60hz
+          name: raphael-60-90hz
           if-no-files-found: warn
           path: |
-            out/raphael-stock-ksunext-ak3.zip
-            out/raphael-stock-ksunext-ak3.zip.sha256
+            out/raphael-90hz-ksunext-ak3.zip
+            out/raphael-90hz-ksunext-ak3.zip.sha256
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image
