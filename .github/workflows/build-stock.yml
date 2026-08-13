@@ -257,6 +257,8 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
 
+          # dsi-staging objects are members of msm_drm.o and the directory has
+          # no standalone Makefile, so compile the real parent composite target.
           make O=out \
             ARCH=arm64 \
             LLVM=1 \
@@ -264,9 +266,7 @@ jobs:
             CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            drivers/gpu/drm/msm/dsi-staging/dsi_panel.o \
-            drivers/gpu/drm/msm/dsi-staging/dsi_display.o \
-            drivers/gpu/drm/msm/dsi-staging/dsi_ctrl.o \
+            drivers/gpu/drm/msm/msm_drm.o \
             -j$(nproc)
 
           echo "Bool-X DSI clock port compiled successfully."
