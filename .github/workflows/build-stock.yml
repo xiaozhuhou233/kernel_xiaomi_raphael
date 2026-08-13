@@ -17,6 +17,11 @@ jobs:
     name: Build Raphael 60/90Hz
     runs-on: ubuntu-24.04
 
+    # Mark LOCALVERSION as explicitly set so scripts/setlocalversion does not
+    # append a '+' after the CI-only DTS transformer makes the tree dirty.
+    env:
+      LOCALVERSION: ""
+
     permissions:
       contents: read
 
@@ -211,14 +216,12 @@ jobs:
           KERNEL_RELEASE="$(make -s O=out ARCH=arm64 kernelrelease)"
           echo "$KERNEL_RELEASE"
 
-          case "$KERNEL_RELEASE" in
-            *-SOVIET-Mod-for-EvolutionX)
-              ;;
-            *)
-              echo "ERROR: custom kernel name is missing" >&2
-              exit 1
-              ;;
-          esac
+          EXPECTED_RELEASE="4.14.357-openela-SOVIET-Mod-for-EvolutionX"
+          if [ "$KERNEL_RELEASE" != "$EXPECTED_RELEASE" ]; then
+            echo "ERROR: expected '$EXPECTED_RELEASE'" >&2
+            echo "ERROR: actual   '$KERNEL_RELEASE'" >&2
+            exit 1
+          fi
 
       # ============================================================
       # QUICK TEST 1: USB-PD
