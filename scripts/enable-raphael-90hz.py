@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Add a Bool-X-derived 90 Hz mode to Raphael SS EA8076 panels.
+"""Add KamiOC-derived 72/84/90 Hz modes to Raphael SS EA8076 panels.
 
-Bool-X calculates command-mode DSI transfer time from the requested bit clock.
-The EvolutionX base driver predates that calculation and otherwise falls back
-to 14000 us for every mode.  Supplying Bool-X's calculated 10108 us value in
-the 90 Hz timing gives the older driver the equivalent pixel/MDP clock.
+KamiOC's old-tree DTBO cannot target the EvolutionX overlay nodes directly.
+This transformer keeps the current stable 60 Hz node and transplants KamiOC's
+known-working high-refresh porches, clocks and oscillator commands.  Explicit
+transfer times emulate the newer DSI clock calculation in the older driver.
 """
 
 from pathlib import Path
@@ -30,6 +30,12 @@ PANELS = {
         "phy_90": "00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A",
     },
 }
+
+MODES = (
+    {"node": 1, "fps": 72, "clock": 1_200_000_000, "xfer": 12_635},
+    {"node": 2, "fps": 84, "clock": 1_400_000_000, "xfer": 10_829},
+    {"node": 3, "fps": 90, "clock": 1_500_000_000, "xfer": 10_108},
+)
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -79,41 +85,45 @@ def add_switch_command(block: str, d1: str) -> str:
     return replace_once(block, anchor, anchor + switch, "timing switch insertion")
 
 
-def make_90hz(block: str, cfg: dict[str, object]) -> str:
-    high = replace_once(block, "timing@0{", "timing@1{", "timing node")
+def make_high_refresh(
+    block: str, cfg: dict[str, object], mode: dict[str, int]
+) -> str:
+    high = replace_once(
+        block, "timing@0{", f"timing@{mode['node']}{{", "timing node"
+    )
 
     replacements = (
-        ("qcom,mdss-dsi-h-front-porch = <64>;", "qcom,mdss-dsi-h-front-porch = <42>;"),
-        ("qcom,mdss-dsi-h-back-porch = <64>;", "qcom,mdss-dsi-h-back-porch = <42>;"),
-        ("qcom,mdss-dsi-h-pulse-width = <20>;", "qcom,mdss-dsi-h-pulse-width = <12>;"),
-        ("qcom,mdss-dsi-v-back-porch = <64>;", "qcom,mdss-dsi-v-back-porch = <42>;"),
-        ("qcom,mdss-dsi-v-front-porch = <64>;", "qcom,mdss-dsi-v-front-porch = <42>;"),
-        (f"qcom,mdss-dsi-v-pulse-width = <{cfg['v_pulse_60']}>;", "qcom,mdss-dsi-v-pulse-width = <12>;"),
-        ("qcom,mdss-dsi-panel-framerate = <60>;", "qcom,mdss-dsi-panel-framerate = <90>;"),
+        ("qcom,mdss-dsi-h-front-porch = <64>;", "qcom,mdss-dsi-h-front-porch = <22>;"),
+        ("qcom,mdss-dsi-h-back-porch = <64>;", "qcom,mdss-dsi-h-back-porch = <16>;"),
+        ("qcom,mdss-dsi-h-pulse-width = <20>;", "qcom,mdss-dsi-h-pulse-width = <16>;"),
+        ("qcom,mdss-dsi-v-back-porch = <64>;", "qcom,mdss-dsi-v-back-porch = <22>;"),
+        ("qcom,mdss-dsi-v-front-porch = <64>;", "qcom,mdss-dsi-v-front-porch = <16>;"),
+        (f"qcom,mdss-dsi-v-pulse-width = <{cfg['v_pulse_60']}>;", "qcom,mdss-dsi-v-pulse-width = <16>;"),
+        ("qcom,mdss-dsi-panel-framerate = <60>;", f"qcom,mdss-dsi-panel-framerate = <{mode['fps']}>;"),
         (
             f"qcom,mdss-dsi-panel-clockrate = <{cfg['clock_60']}>;",
-            "qcom,mdss-dsi-panel-clockrate = <1500000000>;\n"
-            "\t\t\t\tqcom,mdss-mdp-transfer-time-us = <10108>;",
+            f"qcom,mdss-dsi-panel-clockrate = <{mode['clock']}>;\n"
+            f"\t\t\t\tqcom,mdss-mdp-transfer-time-us = <{mode['xfer']}>;",
         ),
     )
     for old, new in replacements:
-        high = replace_once(high, old, new, "90 Hz timing")
+        high = replace_once(high, old, new, f"{mode['fps']} Hz timing")
 
     high = high.replace(f"02 D1 {cfg['d1_60']}", f"02 D1 {cfg['d1_90']}")
     if high.count(f"02 D1 {cfg['d1_90']}") < 2:
-        raise RuntimeError("90 Hz D1 commands were not updated")
+        raise RuntimeError(f"{mode['fps']} Hz D1 commands were not updated")
 
     high = replace_once(
         high,
         "A3 B9 A1 4A 00 1A B8",
         "A3 A9 A1 4A 00 1A B8",
-        "Bool-X 90 Hz panel-on oscillator",
+        "KamiOC high-refresh panel-on oscillator",
     )
     high = replace_once(
         high,
         "A3 B9 A1 4A 00 8A 18",
         "A3 A9 A1 4A 00 8A 18",
-        "Bool-X 90 Hz timing switch oscillator",
+        "KamiOC high-refresh timing switch oscillator",
     )
 
     jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
@@ -121,7 +131,7 @@ def make_90hz(block: str, cfg: dict[str, object]) -> str:
 \t\t\t\tqcom,mdss-dsi-panel-phy-timings = [{cfg['phy_90']}];
 \t\t\t\tqcom,display-topology = <1 0 1>;
 \t\t\t\tqcom,default-topology-index = <0>;'''
-    high = replace_once(high, jitter, extra, "90 Hz PHY timing")
+    high = replace_once(high, jitter, extra, f"{mode['fps']} Hz PHY timing")
     return high
 
 
@@ -132,10 +142,10 @@ def patch_panel(path: Path, cfg: dict[str, object]) -> None:
 
     start, end, base = timing_block(text)
     base = add_switch_command(base, str(cfg["d1_60"]))
-    high = make_90hz(base, cfg)
-    text = text[:start] + base + "\n\n" + high + text[end:]
+    high_modes = [make_high_refresh(base, cfg, mode) for mode in MODES]
+    text = text[:start] + base + "\n\n" + "\n\n".join(high_modes) + text[end:]
     path.write_text(text)
-    print(f"Enabled 60/90 Hz modes in {path}")
+    print(f"Enabled 60/72/84/90 Hz modes in {path}")
 
 
 def main() -> None:
