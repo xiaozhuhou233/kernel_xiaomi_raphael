@@ -203,6 +203,23 @@ jobs:
             "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_MANUAL_HOOK" \
             out/.config || true
 
+          echo
+          echo "========================================="
+          echo "=== Kernel release shown in Settings ==="
+          echo "========================================="
+
+          KERNEL_RELEASE="$(make -s O=out ARCH=arm64 kernelrelease)"
+          echo "$KERNEL_RELEASE"
+
+          case "$KERNEL_RELEASE" in
+            *-SOVIET-Mod-for-EvolutionX)
+              ;;
+            *)
+              echo "ERROR: custom kernel name is missing" >&2
+              exit 1
+              ;;
+          esac
+
       # ============================================================
       # QUICK TEST 1: USB-PD
       # ============================================================
