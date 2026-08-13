@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-name: Build Raphael 60/72/84/90Hz
+    name: Build Raphael 60/72/84/90Hz
     runs-on: ubuntu-24.04
 
     # Mark LOCALVERSION as explicitly set so scripts/setlocalversion does not
@@ -31,13 +31,13 @@ name: Build Raphael 60/72/84/90Hz
         with:
           fetch-depth: 1
 
-      - name: Enable Raphael 60/90 Hz modes
+      - name: Enable Raphael 60/72/84/90 Hz modes
         run: |
           python3 scripts/enable-raphael-90hz.py
 
           echo "=== Added refresh-rate modes ==="
           grep -R -n -E \
-            'timing@1|panel-framerate = <(60|90)>|panel-clockrate = <1500000000>' \
+            'timing@[123]|panel-framerate = <(60|72|84|90)>|panel-clockrate = <(1200000000|1400000000|1500000000)>' \
             arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display/dsi-panel-ss-fhd-ea8076*-cmd.dtsi
 
       - name: Check source version
@@ -564,7 +564,7 @@ name: Build Raphael 60/72/84/90Hz
             ls -lh out/arch/arm64/boot/dtbo.img
           fi
 
-      - name: Upload 60/90 Hz kernel
+      - name: Upload 60/72/84/90 Hz kernel
         if: ${{ inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
