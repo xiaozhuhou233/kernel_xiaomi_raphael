@@ -21,10 +21,10 @@ rm -rf "$STAGE/AnyKernel3/.git" \
 
 cat > "$STAGE/AnyKernel3/anykernel.sh" <<'AK3'
 ### AnyKernel3 Ramdisk Mod Script
-## Raphael 60/90 Hz + KernelSU Next
+## SOVIET Mod for EvolutionX + Raphael 60/90 Hz + KernelSU Next
 
 properties() { '
-kernel.string=Raphael 60/90Hz KernelSU Next
+kernel.string=SOVIET Mod for EvolutionX | Raphael 60/90Hz | KernelSU Next
 do.devicecheck=1
 do.modules=0
 do.systemless=1
