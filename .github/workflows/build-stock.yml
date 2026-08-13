@@ -96,7 +96,8 @@ jobs:
 
       - name: Restore kernel output cache
         if: ${{ inputs.mode == 'full' }}
-        uses: actions/cache@v4
+        id: kernel-out-cache
+        uses: actions/cache/restore@v4
         with:
           path: out
           key: raphael-out-${{ runner.os }}-r547379-${{ steps.kernel-cache-key.outputs.sha }}
@@ -407,18 +408,34 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
 
-          make O=out \
-            ARCH=arm64 \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CC="ccache clang" \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            DTC_EXT=/usr/bin/dtc \
-            Image.gz-dtb \
-            dtbs \
-            -j$(nproc)
+          if [ "${{ steps.kernel-out-cache.outputs.cache-hit }}" = "true" ] && \
+             [ -s out/arch/arm64/boot/Image.gz-dtb ] && \
+             [ -s out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo ]; then
+            echo "Reusing cached kernel and Raphael DTBO."
+          else
+            make O=out \
+              ARCH=arm64 \
+              LLVM=1 \
+              LLVM_IAS=1 \
+              CC="ccache clang" \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CLANG_TRIPLE=aarch64-linux-gnu- \
+              DTC_EXT=/usr/bin/dtc \
+              Image.gz-dtb \
+              dtbs \
+              -j$(nproc)
+          fi
 
+      - name: Save kernel output cache
+        if: ${{ inputs.mode == 'full' && steps.kernel-out-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: out
+          key: raphael-out-${{ runner.os }}-r547379-${{ steps.kernel-cache-key.outputs.sha }}
+
+      - name: Create Raphael DTBO image
+        if: ${{ inputs.mode == 'full' }}
+        run: |
           python3 scripts/dtc/mkdtboimg.py create \
             out/arch/arm64/boot/dtbo.img \
             --page_size=4096 \
