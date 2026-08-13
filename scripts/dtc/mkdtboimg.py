@@ -25,6 +25,11 @@ import struct
 from sys import stdout
 import zlib
 
+try:
+    xrange
+except NameError:
+    xrange = range
+
 class CompressionFormat(object):
     """Enum representing DT compression format for a DT entry.
     """
