@@ -251,6 +251,26 @@ jobs:
           echo
           echo "USB-PD test passed."
 
+      - name: Quick test Bool-X DSI clock port
+        run: |
+          export PATH="$HOME/tc/r547379/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          make O=out \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            drivers/gpu/drm/msm/dsi-staging/dsi_panel.o \
+            drivers/gpu/drm/msm/dsi-staging/dsi_display.o \
+            drivers/gpu/drm/msm/dsi-staging/dsi_ctrl.o \
+            -j$(nproc)
+
+          echo "Bool-X DSI clock port compiled successfully."
+
       # ============================================================
       # QUICK TEST 2: Raphael-only DTBO
       # ============================================================
