@@ -16,7 +16,6 @@ PANELS = {
         "d1_90": "0D",
         "on_tail_90": "13 98",
         "switch_tail_90": "65 45",
-        "phy_60": "00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A",
         "phy_90": "00 31 0D 0D 2B 28 0D 0E 09 02 04 00 27 1C",
     },
     "dsi-panel-ss-fhd-ea8076-global-cmd.dtsi": {
@@ -26,7 +25,6 @@ PANELS = {
         "d1_90": "0F",
         "on_tail_90": "13 A6",
         "switch_tail_90": "65 8B",
-        "phy_60": "00 24 0A 0A 26 24 0A 0A 06 03 04 00 1E 1A",
         "phy_90": "00 30 0D 0D 2A 28 0C 0D 09 02 04 00 27 1C",
     },
 }
@@ -79,7 +77,9 @@ def add_switch_command(block: str, d1: str) -> str:
     return replace_once(block, anchor, anchor + switch, "timing switch insertion")
 
 
-def make_soviet_60hz(block: str, cfg: dict[str, object]) -> str:
+def make_90hz(block: str, cfg: dict[str, object]) -> str:
+    high = replace_once(block, "timing@0{", "timing@1{", "timing node")
+
     replacements = (
         ("qcom,mdss-dsi-h-front-porch = <64>;", "qcom,mdss-dsi-h-front-porch = <42>;"),
         ("qcom,mdss-dsi-h-back-porch = <64>;", "qcom,mdss-dsi-h-back-porch = <42>;"),
@@ -87,23 +87,6 @@ def make_soviet_60hz(block: str, cfg: dict[str, object]) -> str:
         ("qcom,mdss-dsi-v-back-porch = <64>;", "qcom,mdss-dsi-v-back-porch = <42>;"),
         ("qcom,mdss-dsi-v-front-porch = <64>;", "qcom,mdss-dsi-v-front-porch = <42>;"),
         (f"qcom,mdss-dsi-v-pulse-width = <{cfg['v_pulse_60']}>;", "qcom,mdss-dsi-v-pulse-width = <12>;"),
-    )
-    for old, new in replacements:
-        block = replace_once(block, old, new, "Soviet 60 Hz timing")
-
-    jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
-    extra = f'''{jitter}
-\t\t\t\tqcom,mdss-dsi-panel-phy-timings = [{cfg['phy_60']}];
-\t\t\t\tqcom,display-topology = <1 0 1>;
-\t\t\t\tqcom,default-topology-index = <0>;'''
-    block = replace_once(block, jitter, extra, "Soviet 60 Hz PHY timing")
-    return add_switch_command(block, str(cfg["d1_60"]))
-
-
-def make_90hz(block: str, cfg: dict[str, object]) -> str:
-    high = replace_once(block, "timing@0{", "timing@1{", "timing node")
-
-    replacements = (
         ("qcom,mdss-dsi-panel-framerate = <60>;", "qcom,mdss-dsi-panel-framerate = <90>;"),
         (f"qcom,mdss-dsi-panel-clockrate = <{cfg['clock_60']}>;", "qcom,mdss-dsi-panel-clockrate = <1500000000>;"),
     )
@@ -127,12 +110,12 @@ def make_90hz(block: str, cfg: dict[str, object]) -> str:
         "90 Hz timing switch oscillator",
     )
 
-    high = replace_once(
-        high,
-        f"qcom,mdss-dsi-panel-phy-timings = [{cfg['phy_60']}];",
-        f"qcom,mdss-dsi-panel-phy-timings = [{cfg['phy_90']}];",
-        "90 Hz PHY timing",
-    )
+    jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
+    extra = f'''{jitter}
+\t\t\t\tqcom,mdss-dsi-panel-phy-timings = [{cfg['phy_90']}];
+\t\t\t\tqcom,display-topology = <1 0 1>;
+\t\t\t\tqcom,default-topology-index = <0>;'''
+    high = replace_once(high, jitter, extra, "90 Hz PHY timing")
     return high
 
 
@@ -142,7 +125,7 @@ def patch_panel(path: Path, cfg: dict[str, object]) -> None:
         raise RuntimeError(f"{path}: timing@1 already exists; refusing to duplicate it")
 
     start, end, base = timing_block(text)
-    base = make_soviet_60hz(base, cfg)
+    base = add_switch_command(base, str(cfg["d1_60"]))
     high = make_90hz(base, cfg)
     text = text[:start] + base + "\n\n" + high + text[end:]
     path.write_text(text)
