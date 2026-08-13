@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Add a Bool-X-derived 90 Hz mode to Raphael SS EA8076 panels."""
+"""Add a Bool-X-derived 90 Hz mode to Raphael SS EA8076 panels.
+
+Bool-X calculates command-mode DSI transfer time from the requested bit clock.
+The EvolutionX base driver predates that calculation and otherwise falls back
+to 14000 us for every mode.  Supplying Bool-X's calculated 10108 us value in
+the 90 Hz timing gives the older driver the equivalent pixel/MDP clock.
+"""
 
 from pathlib import Path
 
@@ -84,7 +90,11 @@ def make_90hz(block: str, cfg: dict[str, object]) -> str:
         ("qcom,mdss-dsi-v-front-porch = <64>;", "qcom,mdss-dsi-v-front-porch = <42>;"),
         (f"qcom,mdss-dsi-v-pulse-width = <{cfg['v_pulse_60']}>;", "qcom,mdss-dsi-v-pulse-width = <12>;"),
         ("qcom,mdss-dsi-panel-framerate = <60>;", "qcom,mdss-dsi-panel-framerate = <90>;"),
-        (f"qcom,mdss-dsi-panel-clockrate = <{cfg['clock_60']}>;", "qcom,mdss-dsi-panel-clockrate = <1500000000>;"),
+        (
+            f"qcom,mdss-dsi-panel-clockrate = <{cfg['clock_60']}>;",
+            "qcom,mdss-dsi-panel-clockrate = <1500000000>;\n"
+            "\t\t\t\tqcom,mdss-mdp-transfer-time-us = <10108>;",
+        ),
     )
     for old, new in replacements:
         high = replace_once(high, old, new, "90 Hz timing")
