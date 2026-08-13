@@ -3,7 +3,7 @@ set -euo pipefail
 
 KERNEL_IMAGE="${1:-out/arch/arm64/boot/Image.gz-dtb}"
 DTBO_IMAGE="${2:-out/arch/arm64/boot/dtbo.img}"
-OUTPUT_ZIP="${3:-out/raphael-stock-ksunext-ak3.zip}"
+OUTPUT_ZIP="${3:-out/raphael-90hz-ksunext-ak3.zip}"
 
 AK3_REPO="https://github.com/osm0sis/AnyKernel3.git"
 AK3_COMMIT="e4b1bb25ca2aabcfd57f694a5998d87130701b71"
@@ -21,10 +21,10 @@ rm -rf "$STAGE/AnyKernel3/.git" \
 
 cat > "$STAGE/AnyKernel3/anykernel.sh" <<'AK3'
 ### AnyKernel3 Ramdisk Mod Script
-## Raphael stock 60 Hz + KernelSU Next
+## Raphael 60/90 Hz + KernelSU Next
 
 properties() { '
-kernel.string=Raphael Stock 60Hz KernelSU Next
+kernel.string=Raphael 60/90Hz KernelSU Next
 do.devicecheck=1
 do.modules=0
 do.systemless=1
