@@ -83,6 +83,24 @@ jobs:
           echo "=== LLD ==="
           "$HOME/tc/r547379/bin/ld.lld" --version
 
+      - name: Compute kernel source cache key
+        id: kernel-cache-key
+        run: |
+          KERNEL_SOURCE_SHA="$(git log -1 --format=%H -- \
+            . \
+            ':(exclude).github/**' \
+            ':(exclude)scripts/package-anykernel3.sh' \
+            ':(exclude)scripts/dtc/mkdtboimg.py')"
+          echo "sha=$KERNEL_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Kernel source cache key: $KERNEL_SOURCE_SHA"
+
+      - name: Restore kernel output cache
+        if: ${{ inputs.mode == 'full' }}
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: raphael-out-${{ runner.os }}-r547379-${{ steps.kernel-cache-key.outputs.sha }}
+
       # ============================================================
       # ccache
       # ============================================================
