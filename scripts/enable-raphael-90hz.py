@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add Soviet's hardware-tested 90 Hz mode to Raphael SS EA8076 panels."""
+"""Add a Bool-X-derived 90 Hz mode to Raphael SS EA8076 panels."""
 
 from pathlib import Path
 
@@ -13,19 +13,15 @@ PANELS = {
         "v_pulse_60": 20,
         "clock_60": 1_100_000_000,
         "d1_60": "0F",
-        "d1_90": "0D",
-        "on_tail_90": "13 98",
-        "switch_tail_90": "65 45",
-        "phy_90": "00 31 0D 0D 2B 28 0D 0E 09 02 04 00 27 1C",
+        "d1_90": "0F",
+        "phy_90": "00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A",
     },
     "dsi-panel-ss-fhd-ea8076-global-cmd.dtsi": {
         "v_pulse_60": 27,
         "clock_60": 1_103_000_000,
         "d1_60": "11",
         "d1_90": "0F",
-        "on_tail_90": "13 A6",
-        "switch_tail_90": "65 8B",
-        "phy_90": "00 30 0D 0D 2A 28 0C 0D 09 02 04 00 27 1C",
+        "phy_90": "00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A",
     },
 }
 
@@ -100,14 +96,14 @@ def make_90hz(block: str, cfg: dict[str, object]) -> str:
     high = replace_once(
         high,
         "A3 B9 A1 4A 00 1A B8",
-        f"A3 B9 A1 4A 00 {cfg['on_tail_90']}",
-        "90 Hz panel-on oscillator",
+        "A3 A9 A1 4A 00 1A B8",
+        "Bool-X 90 Hz panel-on oscillator",
     )
     high = replace_once(
         high,
         "A3 B9 A1 4A 00 8A 18",
-        f"A3 A9 A1 4A 00 {cfg['switch_tail_90']}",
-        "90 Hz timing switch oscillator",
+        "A3 A9 A1 4A 00 8A 18",
+        "Bool-X 90 Hz timing switch oscillator",
     )
 
     jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
