@@ -470,7 +470,7 @@ class Dtbo(object):
         dt_offset = (self.header_size +
                      dt_entry_count * self.dt_entry_size)
 
-        dt_entry_buf = ""
+        dt_entry_buf = b""
         for dt_entry in dt_entries:
             if not isinstance(dt_entry, DtEntry):
                 raise ValueError('Adding invalid DT entry object to DTBO')
