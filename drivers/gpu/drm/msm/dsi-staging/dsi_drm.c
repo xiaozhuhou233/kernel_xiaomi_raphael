@@ -196,6 +196,11 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &notify_data);
 
 	/* By this point mode should have been validated through mode_fixup */
+	/* DIAG: trace the enable path decision. */
+	pr_info("[endiag] pre_enable: active_changed=%d flags=0x%x refresh=%u\n",
+		bridge->encoder->crtc->state->active_changed,
+		c_bridge->dsi_mode.dsi_mode_flags,
+		c_bridge->dsi_mode.timing.refresh_rate);
 	rc = dsi_display_set_mode(c_bridge->display,
 			&(c_bridge->dsi_mode), 0x0);
 	if (rc) {
@@ -207,9 +212,11 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	if (c_bridge->dsi_mode.dsi_mode_flags &
 		(DSI_MODE_FLAG_SEAMLESS | DSI_MODE_FLAG_VRR |
 		 DSI_MODE_FLAG_DYN_CLK)) {
-		pr_debug("[%d] seamless pre-enable\n", c_bridge->id);
+		pr_info("[endiag] seamless path, skip prepare/enable\n");
 		return;
 	}
+
+	pr_info("[endiag] full path: prepare + enable\n");
 
 	SDE_ATRACE_BEGIN("dsi_display_prepare");
 	rc = dsi_display_prepare(c_bridge->display);
@@ -387,7 +394,6 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 	struct drm_display_mode cur_mode;
 	struct drm_crtc_state *crtc_state;
 	bool clone_mode = false;
-	bool crosses_60hz;
 	struct drm_encoder *encoder;
 
 	crtc_state = container_of(mode, struct drm_crtc_state, mode);
@@ -471,27 +477,10 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_POMS;
 
 		/* No DMS/VRR when drm pipeline is changing */
-		/*
-		 * A refresh-rate change that crosses the 60 Hz boundary also
-		 * changes the panel oscillator (FFC B9 <-> A9).  The DDIC only
-		 * accepts that oscillator change during a full panel
-		 * re-initialization (reset + ON sequence); a light DMS
-		 * timing-switch is silently ignored, leaving the panel at its
-		 * previous rate (observed: Settings reports 90 Hz but the panel
-		 * keeps scanning at 60 Hz).  Do not flag such a switch as DMS so
-		 * it takes the full re-init path instead.
-		 */
-		crosses_60hz =
-			((cur_dsi_mode.timing.refresh_rate <= 60 &&
-			  dsi_mode.timing.refresh_rate > 60) ||
-			 (cur_dsi_mode.timing.refresh_rate > 60 &&
-			  dsi_mode.timing.refresh_rate <= 60));
-
 		if (!drm_mode_equal(&cur_mode, adjusted_mode) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_POMS)) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK)) &&
-			!crosses_60hz &&
 			(!crtc_state->active_changed ||
 			 display->is_cont_splash_enabled))
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_DMS;

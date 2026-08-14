@@ -585,6 +585,11 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 	count = mode->priv_info->cmd_sets[type].count;
 	state = mode->priv_info->cmd_sets[type].state;
 
+	/* DIAG: trace every panel command set dispatch. */
+	pr_info("[txdiag] type=%d count=%d mode_refresh=%u clk=%llu\n",
+			type, count, mode->timing.refresh_rate,
+			mode->timing.clk_rate_hz);
+
 	if (count == 0) {
 		pr_debug("[%s] No commands to be sent for state(%d)\n",
 			 panel->name, type);

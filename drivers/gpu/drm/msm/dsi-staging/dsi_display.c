@@ -7641,6 +7641,12 @@ int dsi_display_enable(struct dsi_display *display)
 
 	mode = display->panel->cur_mode;
 
+	/* DIAG: trace the enable branch decision. */
+	pr_info("[endiag] display_enable: refresh=%u flags=0x%x dms=%d poms=%d\n",
+		mode->timing.refresh_rate, mode->dsi_mode_flags,
+		!!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS),
+		!!(mode->dsi_mode_flags & DSI_MODE_FLAG_POMS));
+
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
 		rc = dsi_panel_switch(display->panel);
 		if (rc) {
