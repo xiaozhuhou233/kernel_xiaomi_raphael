@@ -115,8 +115,12 @@ jobs:
         with:
           path: out
           key: raphael-out-${{ runner.os }}-r547379-${{ steps.kernel-cache-key.outputs.sha }}
-          restore-keys: |
-            raphael-out-${{ runner.os }}-r547379-
+          # No restore-keys fallback: a prefix hit would restore the kernel
+          # and DTBO of an older source tree and, because the restore step
+          # then reports cache-hit=true, the Build step would silently reuse
+          # them instead of rebuilding.  That shipped a "new" package whose
+          # kernel/DTBO were byte-identical to the previous round.  Only
+          # reuse the output cache when the source tree is exactly the same.
 
       # ============================================================
       # ccache
