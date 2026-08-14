@@ -299,6 +299,27 @@ static void sde_encoder_phys_cmd_te_rd_ptr_irq(void *arg, int irq_idx)
 
 	atomic_add_unless(&cmd_enc->pending_vblank_cnt, -1, 0);
 	wake_up_all(&cmd_enc->pending_vblank_wq);
+
+	/* DIAG: measure the physical frame-done (TE/RD_PTR) rate. */
+	{
+		static u32 diag_cnt;
+		static ktime_t diag_ts;
+		u32 delta_ms;
+		ktime_t now = ktime_get();
+
+		if (!diag_ts)
+			diag_ts = now;
+		diag_cnt++;
+		delta_ms = (u32)ktime_ms_delta(now, diag_ts);
+		if (delta_ms >= 5000) {
+			pr_info("[hzdiag] rd_ptr/te irq rate ~%u Hz (n=%u/%ums)\n",
+					diag_cnt * 1000 / delta_ms,
+					diag_cnt, delta_ms);
+			diag_cnt = 0;
+			diag_ts = now;
+		}
+	}
+
 	SDE_ATRACE_END("rd_ptr_irq");
 }
 

@@ -6774,6 +6774,11 @@ int dsi_display_set_mode(struct dsi_display *display,
 		return -EINVAL;
 	}
 
+	pr_info("[%s] set_mode: vrefresh=%u clk_rate=%llu flags=0x%x dms=%d\n",
+		display->name, mode->timing.refresh_rate,
+		mode->timing.clk_rate_hz, mode->dsi_mode_flags,
+		!!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS));
+
 	mutex_lock(&display->display_lock);
 
 	adj_mode = *mode;
@@ -7637,7 +7642,7 @@ int dsi_display_enable(struct dsi_display *display)
 	mode = display->panel->cur_mode;
 
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
-		rc = dsi_panel_post_switch(display->panel);
+		rc = dsi_panel_switch(display->panel);
 		if (rc) {
 			pr_err("[%s] failed to switch DSI panel mode, rc=%d\n",
 				   display->name, rc);
@@ -7664,7 +7669,7 @@ int dsi_display_enable(struct dsi_display *display)
 	}
 
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
-		rc = dsi_panel_switch(display->panel);
+		rc = dsi_panel_post_switch(display->panel);
 		if (rc)
 			pr_err("[%s] failed to switch DSI panel mode, rc=%d\n",
 				   display->name, rc);

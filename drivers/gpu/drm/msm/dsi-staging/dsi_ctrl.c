@@ -920,6 +920,12 @@ static int dsi_ctrl_update_link_freqs(struct dsi_ctrl *dsi_ctrl,
 		 bit_rate, bit_rate_per_lane);
 	pr_debug("byte_clk_rate = %llu, byte_intf_clk_rate = %llu\n",
 		  byte_clk_rate, byte_intf_clk_rate);
+	pr_info("[DSI_%d] link_freqs: override=%llu bit_clk=%llu byte_clk=%llu"
+		" byte_intf=%llu lanes=%u mode=%s\n",
+		dsi_ctrl->cell_index, config->bit_clk_rate_hz_override,
+		config->bit_clk_rate_hz, byte_clk_rate, byte_intf_clk_rate,
+		num_of_lanes,
+		config->panel_mode == DSI_OP_CMD_MODE ? "cmd" : "vid");
 	pr_debug("pclk_rate = %llu\n", pclk_rate);
 
 	dsi_ctrl->clk_freq.byte_clk_rate = byte_clk_rate;

@@ -5228,6 +5228,10 @@ int dsi_panel_switch(struct dsi_panel *panel)
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_TIMING_SWITCH cmds, rc=%d\n",
 		       panel->name, rc);
+	else
+		pr_info("[%s] DSI_CMD_SET_TIMING_SWITCH sent, target vrefresh=%u\n",
+		       panel->name,
+		       panel->cur_mode ? panel->cur_mode->timing.refresh_rate : 0);
 
 	mutex_unlock(&panel->panel_lock);
 	return rc;
