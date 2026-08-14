@@ -32,15 +32,19 @@ PANELS = {
 }
 
 MODES = (
-    {"node": 1, "fps": 72, "clock": 1_200_000_000, "xfer": 12_635},
-    {"node": 2, "fps": 84, "clock": 1_400_000_000, "xfer": 10_829},
-    {"node": 3, "fps": 90, "clock": 1_650_000_000, "xfer": 10_108,
+    # Only 60 (base timing@0) and 90 Hz are kept.  The intermediate modes
+    # (72/84 from KamiOC) share the 90 Hz FFC while running at much lower
+    # clocks, which desynchronizes the DDIC oscillator from the link rate:
+    # switching through them leaves the panel in a corrupted state (green
+    # screen, and 90 Hz then silently staying at 60 Hz).  Removing them keeps
+    # every supported mode FFC/clock-consistent, so 60<->90 switching stays
+    # clean.
+    {"node": 1, "fps": 90, "clock": 1_650_000_000, "xfer": 10_108,
      # Bool-X verified 90 Hz timing (ocd DTBO timing@1).  The clock is
-     # raised to 1.65 GHz to match the FFC ("8A 18") that the timing-switch
-     # command programs, and the porches/PHY timings are Bool-X's exact
-     # values.  At 1.5 GHz (previous KamiOC value) the DDIC sees a ~9%
-     # FFC/clock mismatch and its internal PLL falls back to a low scan
-     # rate (observed: TE reports 90 Hz but the panel updates ~30 fps).
+     # raised to 1.65 GHz to match the high-rate FFC the timing-switch
+     # command programs; the porches/PHY timings are Bool-X's exact values.
+     # At 1.5 GHz (previous KamiOC value) the DDIC cannot sustain 90 fps
+     # delivery and the panel updates at ~30 fps (observed on-device).
      "porches": {"h_front": 96, "h_back": 40, "h_pulse": 32,
                  "v_back": 4, "v_front": 25, "v_pulse": 1},
      "phy": "00 24 0A 0A 26 25 09 0A 06 02 04 00 1E 1A"},
@@ -167,7 +171,7 @@ def patch_panel(path: Path, cfg: dict[str, object]) -> None:
     high_modes = [make_high_refresh(base, cfg, mode) for mode in MODES]
     text = text[:start] + base + "\n\n" + "\n\n".join(high_modes) + text[end:]
     path.write_text(text)
-    print(f"Enabled 60/72/84/90 Hz modes in {path}")
+    print(f"Enabled 60/90 Hz modes in {path}")
 
 
 def main() -> None:
