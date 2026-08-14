@@ -34,7 +34,16 @@ PANELS = {
 MODES = (
     {"node": 1, "fps": 72, "clock": 1_200_000_000, "xfer": 12_635},
     {"node": 2, "fps": 84, "clock": 1_400_000_000, "xfer": 10_829},
-    {"node": 3, "fps": 90, "clock": 1_500_000_000, "xfer": 10_108},
+    {"node": 3, "fps": 90, "clock": 1_650_000_000, "xfer": 10_108,
+     # Bool-X verified 90 Hz timing (ocd DTBO timing@1).  The clock is
+     # raised to 1.65 GHz to match the FFC ("8A 18") that the timing-switch
+     # command programs, and the porches/PHY timings are Bool-X's exact
+     # values.  At 1.5 GHz (previous KamiOC value) the DDIC sees a ~9%
+     # FFC/clock mismatch and its internal PLL falls back to a low scan
+     # rate (observed: TE reports 90 Hz but the panel updates ~30 fps).
+     "porches": {"h_front": 96, "h_back": 40, "h_pulse": 32,
+                 "v_back": 4, "v_front": 25, "v_pulse": 1},
+     "phy": "00 24 0A 0A 26 25 09 0A 06 02 04 00 1E 1A"},
 )
 
 
@@ -92,13 +101,26 @@ def make_high_refresh(
         block, "timing@0{", f"timing@{mode['node']}{{", "timing node"
     )
 
+    porches = mode.get(
+        "porches",
+        {"h_front": 22, "h_back": 16, "h_pulse": 16,
+         "v_back": 22, "v_front": 16, "v_pulse": 16},
+    )
+    phy = mode.get("phy", cfg["phy_90"])
+
     replacements = (
-        ("qcom,mdss-dsi-h-front-porch = <64>;", "qcom,mdss-dsi-h-front-porch = <22>;"),
-        ("qcom,mdss-dsi-h-back-porch = <64>;", "qcom,mdss-dsi-h-back-porch = <16>;"),
-        ("qcom,mdss-dsi-h-pulse-width = <20>;", "qcom,mdss-dsi-h-pulse-width = <16>;"),
-        ("qcom,mdss-dsi-v-back-porch = <64>;", "qcom,mdss-dsi-v-back-porch = <22>;"),
-        ("qcom,mdss-dsi-v-front-porch = <64>;", "qcom,mdss-dsi-v-front-porch = <16>;"),
-        (f"qcom,mdss-dsi-v-pulse-width = <{cfg['v_pulse_60']}>;", "qcom,mdss-dsi-v-pulse-width = <16>;"),
+        ("qcom,mdss-dsi-h-front-porch = <64>;",
+         f"qcom,mdss-dsi-h-front-porch = <{porches['h_front']}>;"),
+        ("qcom,mdss-dsi-h-back-porch = <64>;",
+         f"qcom,mdss-dsi-h-back-porch = <{porches['h_back']}>;"),
+        ("qcom,mdss-dsi-h-pulse-width = <20>;",
+         f"qcom,mdss-dsi-h-pulse-width = <{porches['h_pulse']}>;"),
+        ("qcom,mdss-dsi-v-back-porch = <64>;",
+         f"qcom,mdss-dsi-v-back-porch = <{porches['v_back']}>;"),
+        ("qcom,mdss-dsi-v-front-porch = <64>;",
+         f"qcom,mdss-dsi-v-front-porch = <{porches['v_front']}>;"),
+        (f"qcom,mdss-dsi-v-pulse-width = <{cfg['v_pulse_60']}>;",
+         f"qcom,mdss-dsi-v-pulse-width = <{porches['v_pulse']}>;"),
         ("qcom,mdss-dsi-panel-framerate = <60>;", f"qcom,mdss-dsi-panel-framerate = <{mode['fps']}>;"),
         (
             f"qcom,mdss-dsi-panel-clockrate = <{cfg['clock_60']}>;",
@@ -128,7 +150,7 @@ def make_high_refresh(
 
     jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
     extra = f'''{jitter}
-\t\t\t\tqcom,mdss-dsi-panel-phy-timings = [{cfg['phy_90']}];
+\t\t\t\tqcom,mdss-dsi-panel-phy-timings = [{phy}];
 \t\t\t\tqcom,display-topology = <1 0 1>;
 \t\t\t\tqcom,default-topology-index = <0>;'''
     high = replace_once(high, jitter, extra, f"{mode['fps']} Hz PHY timing")
