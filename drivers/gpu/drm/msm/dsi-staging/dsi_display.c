@@ -1063,6 +1063,7 @@ int dsi_display_set_power(struct drm_connector *connector,
 {
 	struct dsi_display *display = disp;
 	struct msm_drm_notifier notify_data;
+	int old_power_mode;
 	int rc = 0;
 
 	if (!display || !display->panel) {
@@ -1072,14 +1073,23 @@ int dsi_display_set_power(struct drm_connector *connector,
 
 	notify_data.data = &power_mode;
 	notify_data.id = MSM_DRM_PRIMARY_DISPLAY;
+	old_power_mode = display->panel->power_mode;
 
 	switch (power_mode) {
 	case SDE_MODE_DPMS_LP1:
+		if (display->panel->step_refresh_enabled && display->bridge) {
+			pr_info("[step90] entering LP1; invalidate staged transition before panel command\n");
+			dsi_bridge_invalidate_step_refresh(display->bridge);
+		}
 		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &notify_data);
 		rc = dsi_panel_set_lp1(display->panel);
 		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &notify_data);
 		break;
 	case SDE_MODE_DPMS_LP2:
+		if (display->panel->step_refresh_enabled && display->bridge) {
+			pr_info("[step90] entering LP2; invalidate staged transition before panel command\n");
+			dsi_bridge_invalidate_step_refresh(display->bridge);
+		}
 		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &notify_data);
 		rc = dsi_panel_set_lp2(display->panel);
 		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &notify_data);
@@ -1100,8 +1110,17 @@ int dsi_display_set_power(struct drm_connector *connector,
 	pr_debug("Power mode transition from %d to %d %s",
 		 display->panel->power_mode, power_mode,
 		 rc ? "failed" : "successful");
-	if (!rc)
+	if (!rc) {
 		display->panel->power_mode = power_mode;
+		if (power_mode == SDE_MODE_DPMS_ON &&
+		    (old_power_mode == SDE_MODE_DPMS_LP1 ||
+		     old_power_mode == SDE_MODE_DPMS_LP2) &&
+		    display->panel->step_refresh_enabled && display->bridge) {
+			pr_info("[step90] LP%d -> ON completed; request staged refresh restart\n",
+				old_power_mode == SDE_MODE_DPMS_LP1 ? 1 : 2);
+			dsi_bridge_request_step_refresh_restart(display->bridge);
+		}
+	}
 
 	return rc;
 }
@@ -4908,18 +4927,23 @@ int dsi_display_clk_ctrl(void *handle,
 
 static int dsi_display_force_update_dsi_clk(struct dsi_display *display)
 {
+	struct dsi_display_ctrl *m_ctrl;
+	u64 bit_clk_rate = 0;
 	int rc = 0;
 
 	rc = dsi_display_link_clk_force_update_ctrl(display->dsi_clk_handle);
+	m_ctrl = &display->ctrl[display->clk_master_idx];
+	if (m_ctrl->ctrl)
+		bit_clk_rate = m_ctrl->ctrl->clk_freq.byte_clk_rate * 8;
 
 	if (!rc) {
-		pr_info("dsi bit clk has been configured to %d\n",
-			display->cached_clk_rate);
+		pr_info("dsi bit clk has been configured to %llu Hz\n",
+			bit_clk_rate);
 
 		atomic_set(&display->clkrate_change_pending, 0);
 	} else {
-		pr_err("Failed to configure dsi bit clock '%d'. rc = %d\n",
-			display->cached_clk_rate, rc);
+		pr_err("Failed to configure dsi bit clock '%llu'. rc = %d\n",
+			bit_clk_rate, rc);
 	}
 
 	return rc;
@@ -5696,6 +5720,7 @@ error:
 
 int dsi_display_drm_bridge_deinit(struct dsi_display *display)
 {
+	struct dsi_bridge *bridge;
 	int rc = 0;
 
 	if (!display) {
@@ -5704,11 +5729,12 @@ int dsi_display_drm_bridge_deinit(struct dsi_display *display)
 	}
 
 	mutex_lock(&display->display_lock);
-
-	dsi_drm_bridge_cleanup(display->bridge);
+	bridge = display->bridge;
 	display->bridge = NULL;
-
 	mutex_unlock(&display->display_lock);
+
+	/* The worker may enter DSI paths which also take display_lock. */
+	dsi_drm_bridge_cleanup(bridge);
 	return rc;
 }
 
@@ -7481,8 +7507,20 @@ int dsi_display_pre_kickoff(struct drm_connector *connector,
 		struct dsi_display *display,
 		struct msm_display_kickoff_params *params)
 {
+	struct drm_crtc *crtc = NULL;
+	u32 step_flags = 0;
+	bool step_refresh = false;
 	int rc = 0;
 	int i;
+	int ret;
+
+	if (connector && connector->state && connector->state->crtc &&
+	    connector->state->crtc->state) {
+		crtc = connector->state->crtc;
+		step_flags = crtc->state->adjusted_mode.private_flags &
+				DSI_MODE_FLAG_STEP_REFRESH_ACTIVE;
+	}
+	step_refresh = display->panel->step_refresh_enabled && step_flags;
 
 	/* check and setup MISR */
 	if (display->misr_enable)
@@ -7501,24 +7539,27 @@ int dsi_display_pre_kickoff(struct drm_connector *connector,
 		/*
 		 * Wait for DSI command engine not to be busy sending data
 		 * from display engine.
-		 * If waiting fails, return "rc" instead of below "ret" so as
-		 * not to impact DRM commit. The clock updating would be
-		 * deferred to the next DRM commit.
+		 * A failed update remains pending. The staged-refresh worker will
+		 * issue a no-op atomic commit so a static desktop does not have to
+		 * wait for user input before this path runs again.
 		 */
 		display_for_each_ctrl(i, display) {
 			struct dsi_ctrl *ctrl = display->ctrl[i].ctrl;
-			int ret = 0;
 
 			ret = dsi_ctrl_wait_for_cmd_mode_mdp_idle(ctrl);
-			if (ret)
+			if (ret) {
+				if (step_refresh)
+					pr_warn("[step90] staged clock update deferred: MDP idle wait failed rc=%d flags=0x%x\n",
+						ret, step_flags);
 				goto wait_failure;
+			}
 		}
 
-		/*
-		 * Don't check the return value so as not to impact DRM commit
-		 * when error occurs.
-		 */
-		(void)dsi_display_force_update_dsi_clk(display);
+		ret = dsi_display_force_update_dsi_clk(display);
+
+		if (ret && step_refresh)
+			pr_warn("[step90] staged clock update remains pending rc=%d flags=0x%x\n",
+				ret, step_flags);
 wait_failure:
 		/* release panel_lock */
 		dsi_panel_release_panel_lock(display->panel);

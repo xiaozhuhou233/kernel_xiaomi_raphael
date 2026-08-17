@@ -15,7 +15,11 @@
 #ifndef _DSI_DRM_H_
 #define _DSI_DRM_H_
 
+#include <linux/atomic.h>
+#include <linux/bitops.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 #include <drm/drmP.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
@@ -24,13 +28,36 @@
 
 #include "dsi_display.h"
 
+#define DSI_MODE_FLAG_STEP_REFRESH_NEXT_BRIDGE	BIT(16)
+#define DSI_MODE_FLAG_STEP_REFRESH_NEXT_TARGET	BIT(17)
+#define DSI_MODE_FLAG_STEP_REFRESH_FINAL		BIT(18)
+#define DSI_MODE_FLAG_STEP_REFRESH_PENDING	\
+	(DSI_MODE_FLAG_STEP_REFRESH_NEXT_BRIDGE | \
+	 DSI_MODE_FLAG_STEP_REFRESH_NEXT_TARGET)
+#define DSI_MODE_FLAG_STEP_REFRESH_ACTIVE	\
+	(DSI_MODE_FLAG_STEP_REFRESH_PENDING | \
+	 DSI_MODE_FLAG_STEP_REFRESH_FINAL)
+
 struct dsi_bridge {
 	struct drm_bridge base;
 	u32 id;
 
 	struct dsi_display *display;
 	struct dsi_display_mode dsi_mode;
+
+	struct delayed_work step_refresh_work;
+	spinlock_t step_refresh_lock;
+	u32 step_refresh_expected_flags;
+	u32 step_refresh_expected_rate;
+	u32 step_refresh_generation;
+	u32 step_refresh_retry_count;
+	atomic_t step_refresh_blocked;
+	atomic_t step_refresh_restart_pending;
+	bool step_refresh_shutdown;
 };
+
+void dsi_bridge_request_step_refresh_restart(struct dsi_bridge *bridge);
+void dsi_bridge_invalidate_step_refresh(struct dsi_bridge *bridge);
 
 /**
  * dsi_conn_set_info_blob - callback to perform info blob initialization
@@ -96,6 +123,13 @@ int dsi_conn_get_mode_info(struct drm_connector *connector,
 enum drm_mode_status dsi_conn_mode_valid(struct drm_connector *connector,
 		struct drm_display_mode *mode,
 		void *display);
+
+struct drm_encoder *dsi_conn_atomic_best_encoder(
+		struct drm_connector *connector, void *display,
+		struct drm_connector_state *c_state);
+
+int dsi_conn_atomic_check(struct drm_connector *connector, void *display,
+		struct drm_connector_state *c_state);
 
 /**
  * dsi_conn_enable_event - callback to notify DSI driver of event registeration

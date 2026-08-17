@@ -258,6 +258,10 @@ struct dsi_panel {
 	struct delayed_work esd_work;
 
 	bool sync_pen_fps;
+	bool step_refresh_enabled;
+	u32 step_refresh_base_rate;
+	u32 step_refresh_bridge_rate;
+	u32 step_refresh_target_rate;
 
 #if defined(CONFIG_MACH_XIAOMI_VAYU) || defined(CONFIG_MACH_XIAOMI_NABU)
 	bool is_tddi_flag;

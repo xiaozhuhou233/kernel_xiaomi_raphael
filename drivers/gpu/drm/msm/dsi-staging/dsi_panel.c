@@ -2674,6 +2674,7 @@ error:
 static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 {
 	struct dsi_parser_utils *utils = &panel->utils;
+	int rc;
 
 	panel->ulps_feature_enabled =
 		utils->read_bool(utils->data, "qcom,ulps-enabled");
@@ -2701,6 +2702,35 @@ static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 
 	panel->sync_pen_fps = utils->read_bool(utils->data,
 			"qcom,sync-pen-fps");
+
+	panel->step_refresh_enabled = utils->read_bool(utils->data,
+			"xiaomi,mdss-dsi-step-refresh-switch");
+	if (panel->step_refresh_enabled) {
+		rc = utils->read_u32(utils->data,
+			"xiaomi,mdss-dsi-step-refresh-base-rate",
+			&panel->step_refresh_base_rate);
+		rc |= utils->read_u32(utils->data,
+			"xiaomi,mdss-dsi-step-refresh-bridge-rate",
+			&panel->step_refresh_bridge_rate);
+		rc |= utils->read_u32(utils->data,
+			"xiaomi,mdss-dsi-step-refresh-target-rate",
+			&panel->step_refresh_target_rate);
+		if (rc ||
+		    panel->step_refresh_base_rate >=
+				panel->step_refresh_bridge_rate ||
+		    panel->step_refresh_bridge_rate >=
+				panel->step_refresh_target_rate) {
+			pr_err("[%s] invalid step refresh configuration\n",
+				panel->name);
+			panel->step_refresh_enabled = false;
+		} else {
+			pr_info("[%s] step refresh enabled: %u -> %u -> %u Hz\n",
+				panel->name,
+				panel->step_refresh_base_rate,
+				panel->step_refresh_bridge_rate,
+				panel->step_refresh_target_rate);
+		}
+	}
 
 	return 0;
 }

@@ -162,6 +162,16 @@ def patch_panel(path: Path, cfg: dict[str, object]) -> None:
     if "timing@1{" in text:
         raise RuntimeError(f"{path}: timing@1 already exists; refusing to duplicate it")
 
+    model = '\t\tqcom,mdss-dsi-panel-model = "SAMSUNG FHD EA8076 CMD PANEL";'
+    step_refresh = '''
+\t\txiaomi,mdss-dsi-step-refresh-switch;
+\t\txiaomi,mdss-dsi-step-refresh-base-rate = <60>;
+\t\txiaomi,mdss-dsi-step-refresh-bridge-rate = <72>;
+\t\txiaomi,mdss-dsi-step-refresh-target-rate = <90>;'''
+    text = replace_once(
+        text, model, model + step_refresh, "step refresh configuration"
+    )
+
     start, end, base = timing_block(text)
     base = add_switch_command(base, str(cfg["d1_60"]))
     high_modes = [make_high_refresh(base, cfg, mode) for mode in MODES]
