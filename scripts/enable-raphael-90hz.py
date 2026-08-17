@@ -34,16 +34,7 @@ PANELS = {
 MODES = (
     {"node": 1, "fps": 72, "clock": 1_200_000_000, "xfer": 12_635},
     {"node": 2, "fps": 84, "clock": 1_400_000_000, "xfer": 10_829},
-    {"node": 3, "fps": 90, "clock": 1_650_000_000, "xfer": 10_108,
-     # Bool-X verified 90 Hz timing (ocd DTBO timing@1).  The clock is
-     # raised to 1.65 GHz to match the FFC ("8A 18") that the timing-switch
-     # command programs, and the porches/PHY timings are Bool-X's exact
-     # values.  At 1.5 GHz (previous KamiOC value) the DDIC sees a ~9%
-     # FFC/clock mismatch and its internal PLL falls back to a low scan
-     # rate (observed: TE reports 90 Hz but the panel updates ~30 fps).
-     "porches": {"h_front": 96, "h_back": 40, "h_pulse": 32,
-                 "v_back": 4, "v_front": 25, "v_pulse": 1},
-     "phy": "00 24 0A 0A 26 25 09 0A 06 02 04 00 1E 1A"},
+    {"node": 3, "fps": 90, "clock": 1_500_000_000, "xfer": 10_108},
 )
 
 
@@ -54,10 +45,11 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-def timing_block(text: str) -> tuple[int, int, str]:
-    start = text.find("\t\t\ttiming@0{")
+def timing_block(text: str, node: int = 0) -> tuple[int, int, str]:
+    marker = f"\t\t\ttiming@{node}{{"
+    start = text.find(marker)
     if start < 0:
-        raise RuntimeError("timing@0 block not found")
+        raise RuntimeError(f"timing@{node} block not found")
 
     brace = text.find("{", start)
     depth = 0
@@ -70,12 +62,14 @@ def timing_block(text: str) -> tuple[int, int, str]:
             if depth == 0:
                 semicolon = text.find(";", pos)
                 if semicolon < 0:
-                    raise RuntimeError("timing@0 block has no closing semicolon")
+                    raise RuntimeError(
+                        f"timing@{node} block has no closing semicolon"
+                    )
                 end = semicolon + 1
                 break
 
     if end is None:
-        raise RuntimeError("unterminated timing@0 block")
+        raise RuntimeError(f"unterminated timing@{node} block")
     return start, end, text[start:end]
 
 
@@ -157,6 +151,35 @@ def make_high_refresh(
     return high
 
 
+def validate_panel(text: str, path: Path, cfg: dict[str, object]) -> None:
+    _, _, high90 = timing_block(text, 3)
+    expected_90 = (
+        "qcom,mdss-dsi-panel-framerate = <90>;",
+        "qcom,mdss-dsi-panel-clockrate = <1500000000>;",
+        "qcom,mdss-mdp-transfer-time-us = <10108>;",
+        "qcom,mdss-dsi-h-front-porch = <22>;",
+        "qcom,mdss-dsi-h-back-porch = <16>;",
+        "qcom,mdss-dsi-h-pulse-width = <16>;",
+        "qcom,mdss-dsi-v-back-porch = <22>;",
+        "qcom,mdss-dsi-v-front-porch = <16>;",
+        "qcom,mdss-dsi-v-pulse-width = <16>;",
+        f"qcom,mdss-dsi-panel-phy-timings = [{cfg['phy_90']}];",
+        "A3 A9 A1 4A 00 1A B8",
+        "A3 A9 A1 4A 00 8A 18",
+    )
+    expected_step = (
+        "xiaomi,mdss-dsi-step-refresh-switch;",
+        "xiaomi,mdss-dsi-step-refresh-base-rate = <60>;",
+        "xiaomi,mdss-dsi-step-refresh-bridge-rate = <72>;",
+        "xiaomi,mdss-dsi-step-refresh-target-rate = <90>;",
+    )
+
+    missing = [item for item in expected_90 if item not in high90]
+    missing.extend(item for item in expected_step if item not in text)
+    if missing:
+        raise RuntimeError(f"{path}: generated true-90 validation failed: {missing}")
+
+
 def patch_panel(path: Path, cfg: dict[str, object]) -> None:
     text = path.read_text()
     if "timing@1{" in text:
@@ -176,6 +199,7 @@ def patch_panel(path: Path, cfg: dict[str, object]) -> None:
     base = add_switch_command(base, str(cfg["d1_60"]))
     high_modes = [make_high_refresh(base, cfg, mode) for mode in MODES]
     text = text[:start] + base + "\n\n" + "\n\n".join(high_modes) + text[end:]
+    validate_panel(text, path, cfg)
     path.write_text(text)
     print(f"Enabled 60/72/84/90 Hz modes in {path}")
 
