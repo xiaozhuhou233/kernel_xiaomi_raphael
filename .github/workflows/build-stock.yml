@@ -35,10 +35,70 @@ jobs:
         run: |
           python3 scripts/enable-raphael-90hz.py
 
-          echo "=== Added refresh-rate modes ==="
-          grep -R -n -E \
-            'timing@[123]|panel-framerate = <(60|72|84|90)>|panel-clockrate = <(1200000000|1400000000|1650000000)>' \
-            arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display/dsi-panel-ss-fhd-ea8076*-cmd.dtsi
+          python3 <<'PY'
+          from pathlib import Path
+
+          display = Path(
+              "arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display"
+          )
+          panels = (
+              display / "dsi-panel-ss-fhd-ea8076-cmd.dtsi",
+              display / "dsi-panel-ss-fhd-ea8076-global-cmd.dtsi",
+          )
+
+          def timing_block(text: str, node: int) -> str:
+              marker = f"timing@{node}{{"
+              start = text.index(marker)
+              brace = text.index("{", start)
+              depth = 0
+              for pos in range(brace, len(text)):
+                  if text[pos] == "{":
+                      depth += 1
+                  elif text[pos] == "}":
+                      depth -= 1
+                      if depth == 0:
+                          return text[start:pos + 1]
+              raise RuntimeError(f"unterminated {marker}")
+
+          expected_90 = (
+              "qcom,mdss-dsi-panel-framerate = <90>;",
+              "qcom,mdss-dsi-panel-clockrate = <1500000000>;",
+              "qcom,mdss-mdp-transfer-time-us = <10108>;",
+              "qcom,mdss-dsi-h-front-porch = <22>;",
+              "qcom,mdss-dsi-h-back-porch = <16>;",
+              "qcom,mdss-dsi-h-pulse-width = <16>;",
+              "qcom,mdss-dsi-v-back-porch = <22>;",
+              "qcom,mdss-dsi-v-front-porch = <16>;",
+              "qcom,mdss-dsi-v-pulse-width = <16>;",
+              "qcom,mdss-dsi-panel-phy-timings = "
+              "[00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A];",
+              "A3 A9 A1 4A 00 1A B8",
+              "A3 A9 A1 4A 00 8A 18",
+          )
+          expected_step = (
+              "xiaomi,mdss-dsi-step-refresh-switch;",
+              "xiaomi,mdss-dsi-step-refresh-base-rate = <60>;",
+              "xiaomi,mdss-dsi-step-refresh-bridge-rate = <72>;",
+              "xiaomi,mdss-dsi-step-refresh-target-rate = <90>;",
+          )
+          forbidden_90 = (
+              "qcom,mdss-dsi-panel-clockrate = <1650000000>;",
+              "A3 B9 A1 4A 00 1A B8",
+              "A3 B9 A1 4A 00 8A 18",
+          )
+
+          for panel in panels:
+              text = panel.read_text()
+              high90 = timing_block(text, 3)
+              missing = [item for item in expected_90 if item not in high90]
+              missing.extend(item for item in expected_step if item not in text)
+              if missing:
+                  raise SystemExit(f"{panel}: missing true-90 data: {missing}")
+              forbidden = [item for item in forbidden_90 if item in high90]
+              if forbidden:
+                  raise SystemExit(f"{panel}: stale fake-90 data: {forbidden}")
+              print(f"Verified true 90 Hz source tuple: {panel}")
+          PY
 
       - name: Check source version
         run: |
@@ -483,6 +543,129 @@ jobs:
 
             touch out/.raphael-90hz-cache
           fi
+
+      - name: Verify compiled Raphael true 90 Hz DTBO
+        run: |
+          DTBO="out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo"
+          DTS="/tmp/raphael-true90.dts"
+
+          test -s "$DTBO"
+          /usr/bin/dtc -I dtb -O dts -o "$DTS" "$DTBO"
+
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("/tmp/raphael-true90.dts").read_text()
+
+          def node_block(source: str, name: str) -> str:
+              matches = list(
+                  re.finditer(
+                      rf"^[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*:[ \t]*)?"
+                      rf"{re.escape(name)}[ \t]*\{{",
+                      source,
+                      re.MULTILINE,
+                  )
+              )
+              if len(matches) != 1:
+                  raise RuntimeError(
+                      f"{name}: expected one node, found {len(matches)}"
+                  )
+
+              start = matches[0].start()
+              brace = source.find("{", start, matches[0].end())
+              depth = 0
+              for pos in range(brace, len(source)):
+                  if source[pos] == "{":
+                      depth += 1
+                  elif source[pos] == "}":
+                      depth -= 1
+                      if depth == 0:
+                          return source[start:pos + 1]
+              raise RuntimeError(f"{name}: unterminated node")
+
+          def cell(block: str, prop: str) -> int:
+              match = re.search(
+                  rf"{re.escape(prop)}\s*=\s*<([^>]+)>;", block
+              )
+              if not match:
+                  raise RuntimeError(f"{prop}: property missing")
+              return int(match.group(1).split()[0], 0)
+
+          expected_cells = {
+              "qcom,mdss-dsi-panel-framerate": 90,
+              "qcom,mdss-dsi-panel-clockrate": 1_500_000_000,
+              "qcom,mdss-mdp-transfer-time-us": 10_108,
+              "qcom,mdss-dsi-h-front-porch": 22,
+              "qcom,mdss-dsi-h-back-porch": 16,
+              "qcom,mdss-dsi-h-pulse-width": 16,
+              "qcom,mdss-dsi-v-back-porch": 22,
+              "qcom,mdss-dsi-v-front-porch": 16,
+              "qcom,mdss-dsi-v-pulse-width": 16,
+          }
+          expected_phy = "00 24 0a 0a 26 25 09 0a 06 03 04 00 1e 1a"
+          expected_commands = (
+              "a3 a9 a1 4a 00 1a b8",
+              "a3 a9 a1 4a 00 8a 18",
+          )
+          forbidden_commands = (
+              "a3 b9 a1 4a 00 1a b8",
+              "a3 b9 a1 4a 00 8a 18",
+          )
+          panel_nodes = (
+              "qcom,mdss_dsi_ss_fhd_ea8076_cmd",
+              "qcom,mdss_dsi_ss_fhd_ea8076_global_cmd",
+          )
+
+          for panel_name in panel_nodes:
+              panel = node_block(text, panel_name)
+              block = node_block(panel, "timing@3")
+              for prop, expected in expected_cells.items():
+                  actual = cell(block, prop)
+                  if actual != expected:
+                      raise SystemExit(
+                          f"{panel_name}: {prop}={actual}, expected {expected}"
+                      )
+
+              phy = re.search(
+                  r"qcom,mdss-dsi-panel-phy-timings\s*=\s*\[([^]]+)\];",
+                  block,
+                  re.S,
+              )
+              if not phy or " ".join(phy.group(1).lower().split()) != expected_phy:
+                  raise SystemExit(f"{panel_name}: PHY tuple mismatch")
+
+              normalized = " ".join(block.lower().split())
+              for command in expected_commands:
+                  if command not in normalized:
+                      raise SystemExit(
+                          f"{panel_name}: command sequence missing: {command}"
+                      )
+              for command in forbidden_commands:
+                  if command in normalized:
+                      raise SystemExit(
+                          f"{panel_name}: stale command sequence present: {command}"
+                      )
+
+              step_cells = {
+                  "xiaomi,mdss-dsi-step-refresh-base-rate": 60,
+                  "xiaomi,mdss-dsi-step-refresh-bridge-rate": 72,
+                  "xiaomi,mdss-dsi-step-refresh-target-rate": 90,
+              }
+              for prop, expected in step_cells.items():
+                  actual = cell(panel, prop)
+                  if actual != expected:
+                      raise SystemExit(
+                          f"{panel_name}: {prop}={actual}, expected {expected}"
+                      )
+
+              if not re.search(
+                  r"xiaomi,mdss-dsi-step-refresh-switch\s*;", panel
+              ):
+                  raise SystemExit(f"{panel_name}: step-refresh switch missing")
+
+          print("Compiled Raphael DTBO contains the verified true-90 tuple")
+          PY
 
       - name: Save kernel output cache
         if: ${{ inputs.mode == 'full' && steps.kernel-out-cache.outputs.cache-hit != 'true' }}
