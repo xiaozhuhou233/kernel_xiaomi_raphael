@@ -53,6 +53,7 @@ struct dsi_bridge {
 	u32 step_refresh_retry_count;
 	atomic_t step_refresh_blocked;
 	atomic_t step_refresh_restart_pending;
+	atomic_t step_refresh_stage_error;
 	bool step_refresh_shutdown;
 };
 

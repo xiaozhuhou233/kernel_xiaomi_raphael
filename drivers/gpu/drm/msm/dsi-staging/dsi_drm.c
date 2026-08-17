@@ -116,6 +116,51 @@ static bool dsi_bridge_step_refresh_host_ready(struct dsi_display *display)
 	return true;
 }
 
+static bool dsi_bridge_step_refresh_panel_in_lp(struct dsi_panel *panel)
+{
+	return panel &&
+		(panel->power_mode == SDE_MODE_DPMS_LP1 ||
+		 panel->power_mode == SDE_MODE_DPMS_LP2);
+}
+
+static u32 dsi_bridge_step_refresh_active_flags(struct dsi_bridge *bridge)
+{
+	struct drm_crtc *crtc;
+
+	if (!bridge || !bridge->base.encoder)
+		return 0;
+
+	crtc = bridge->base.encoder->crtc;
+	if (!crtc || !crtc->state)
+		return 0;
+
+	return crtc->state->adjusted_mode.private_flags &
+		DSI_MODE_FLAG_STEP_REFRESH_ACTIVE;
+}
+
+static void dsi_bridge_step_refresh_latch_error(struct dsi_bridge *bridge,
+		int rc, const char *action)
+{
+	struct drm_crtc *crtc;
+	u32 flags;
+	u32 rate = 0;
+
+	if (!bridge || !rc)
+		return;
+
+	flags = dsi_bridge_step_refresh_active_flags(bridge);
+	if (!flags)
+		return;
+
+	crtc = bridge->base.encoder->crtc;
+	if (crtc && crtc->state)
+		rate = dsi_bridge_mode_vrefresh(&crtc->state->adjusted_mode);
+
+	if (atomic_cmpxchg(&bridge->step_refresh_stage_error, 0, rc) == 0)
+		pr_err("[step90] stage error latched during %s at %u Hz flags=0x%x rc=%d\n",
+			action, rate, flags, rc);
+}
+
 static bool dsi_bridge_step_refresh_generation_current(
 	struct dsi_bridge *bridge, u32 generation)
 {
@@ -168,6 +213,7 @@ void dsi_bridge_invalidate_step_refresh(struct dsi_bridge *bridge)
 		bridge->step_refresh_retry_count = 0;
 		bridge->step_refresh_generation++;
 		atomic_set(&bridge->step_refresh_restart_pending, 0);
+		atomic_set(&bridge->step_refresh_stage_error, 0);
 	}
 	spin_unlock_irqrestore(&bridge->step_refresh_lock, irq_flags);
 }
@@ -216,6 +262,7 @@ void dsi_bridge_request_step_refresh_restart(struct dsi_bridge *bridge)
 		generation = bridge->step_refresh_generation;
 		atomic_set(&bridge->step_refresh_blocked, 0);
 		atomic_set(&bridge->step_refresh_restart_pending, 1);
+		atomic_set(&bridge->step_refresh_stage_error, 0);
 		mod_delayed_work(system_unbound_wq, &bridge->step_refresh_work,
 			msecs_to_jiffies(STEP_REFRESH_RESTART_DELAY_MS));
 		queued = true;
@@ -238,7 +285,7 @@ static int dsi_bridge_step_refresh_check_ready(struct dsi_bridge *bridge,
 		return -ENODEV;
 
 	if (!crtc->state || !crtc->state->active ||
-	    display->panel->power_mode != SDE_MODE_DPMS_ON)
+	    dsi_bridge_step_refresh_panel_in_lp(display->panel))
 		return -ECANCELED;
 
 	if (atomic_read(&display->panel->esd_recovery_pending))
@@ -393,7 +440,7 @@ retry:
 
 	if (atomic_read(&bridge->step_refresh_blocked) ||
 	    !bridge->display->panel->panel_initialized ||
-	    bridge->display->panel->power_mode != SDE_MODE_DPMS_ON ||
+	    dsi_bridge_step_refresh_panel_in_lp(bridge->display->panel) ||
 	    atomic_read(&bridge->display->panel->esd_recovery_pending) ||
 	    (force_modeset &&
 	     atomic_read(&bridge->display->clkrate_change_pending)) ||
@@ -534,6 +581,7 @@ static void dsi_bridge_step_refresh_complete(struct dsi_bridge *bridge,
 		bridge->step_refresh_retry_count = 0;
 		atomic_set(&bridge->step_refresh_blocked, 0);
 		atomic_set(&bridge->step_refresh_restart_pending, 0);
+		atomic_set(&bridge->step_refresh_stage_error, 0);
 		complete = true;
 	}
 	spin_unlock_irqrestore(&bridge->step_refresh_lock, irq_flags);
@@ -661,6 +709,7 @@ static void dsi_bridge_schedule_step_refresh(struct dsi_bridge *bridge,
 	bool queued = false;
 	bool restart;
 	bool state_changed;
+	int stage_error = 0;
 
 	if (!bridge || !bridge->display || !bridge->display->panel ||
 	    !bridge->display->panel->step_refresh_enabled ||
@@ -713,6 +762,15 @@ static void dsi_bridge_schedule_step_refresh(struct dsi_bridge *bridge,
 
 	if (!flags && !restart) {
 		atomic_set(&bridge->step_refresh_blocked, 0);
+		atomic_set(&bridge->step_refresh_stage_error, 0);
+		goto unlock;
+	}
+
+	stage_error = atomic_read(&bridge->step_refresh_stage_error);
+	if (stage_error) {
+		atomic_set(&bridge->step_refresh_blocked, 1);
+		atomic_set(&bridge->step_refresh_restart_pending, 0);
+		blocked = true;
 		goto unlock;
 	}
 
@@ -726,7 +784,10 @@ static void dsi_bridge_schedule_step_refresh(struct dsi_bridge *bridge,
 unlock:
 	spin_unlock_irqrestore(&bridge->step_refresh_lock, irq_flags);
 
-	if (queued)
+	if (stage_error)
+		pr_err("[step90] stop staged transition at %u Hz flags=0x%x after bridge error rc=%d generation=%u\n",
+			rate, flags, stage_error, generation);
+	else if (queued)
 		pr_info("[step90] queued stage at %u Hz flags=0x%x restart=%d generation=%u\n",
 			rate, flags, restart, generation);
 	else if (blocked && state_changed)
@@ -880,6 +941,8 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		pr_err("Incorrect bridge details\n");
 		return;
 	}
+	if (dsi_bridge_step_refresh_active_flags(c_bridge))
+		atomic_set(&c_bridge->step_refresh_stage_error, 0);
 
 	if (bridge->encoder->crtc->state->active_changed)
 		atomic_set(&c_bridge->display->panel->esd_recovery_pending, 0);
@@ -906,6 +969,7 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	if (rc) {
 		pr_err("[%d] failed to perform a mode set, rc=%d\n",
 		       c_bridge->id, rc);
+		dsi_bridge_step_refresh_latch_error(c_bridge, rc, "mode set");
 		return;
 	}
 
@@ -923,6 +987,8 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	if (rc) {
 		pr_err("[%d] DSI display prepare failed, rc=%d\n",
 		       c_bridge->id, rc);
+		dsi_bridge_step_refresh_latch_error(c_bridge, rc,
+			"display prepare");
 		SDE_ATRACE_END("dsi_display_prepare");
 		return;
 	}
@@ -933,6 +999,8 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	if (rc) {
 		pr_err("[%d] DSI display enable failed, rc=%d\n",
 				c_bridge->id, rc);
+		dsi_bridge_step_refresh_latch_error(c_bridge, rc,
+			"display enable");
 		(void)dsi_display_unprepare(c_bridge->display);
 	}
 	SDE_ATRACE_END("dsi_display_enable");
@@ -962,12 +1030,23 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 		pr_debug("[%d] seamless enable\n", c_bridge->id);
 		return;
 	}
+	if (dsi_bridge_step_refresh_active_flags(c_bridge) &&
+	    atomic_read(&c_bridge->step_refresh_stage_error)) {
+		pr_err("[step90] skip post-enable after staged bridge error rc=%d\n",
+			atomic_read(&c_bridge->step_refresh_stage_error));
+		return;
+	}
 	display = c_bridge->display;
 
 	rc = dsi_display_post_enable(display);
-	if (rc)
+	if (rc) {
 		pr_err("[%d] DSI display post enabled failed, rc=%d\n",
 		       c_bridge->id, rc);
+		dsi_bridge_step_refresh_latch_error(c_bridge, rc,
+			"display post-enable");
+		if (dsi_bridge_step_refresh_active_flags(c_bridge))
+			return;
+	}
 
 	if (display && display->drm_conn) {
 		sde_connector_helper_bridge_enable(display->drm_conn);
@@ -1962,6 +2041,7 @@ struct dsi_bridge *dsi_drm_bridge_init(struct dsi_display *display,
 	bridge->step_refresh_retry_count = 0;
 	atomic_set(&bridge->step_refresh_blocked, 0);
 	atomic_set(&bridge->step_refresh_restart_pending, 0);
+	atomic_set(&bridge->step_refresh_stage_error, 0);
 	bridge->step_refresh_shutdown = false;
 
 	rc = drm_bridge_attach(encoder, &bridge->base, NULL);
@@ -1992,6 +2072,7 @@ void dsi_drm_bridge_cleanup(struct dsi_bridge *bridge)
 	bridge->step_refresh_retry_count = 0;
 	bridge->step_refresh_generation++;
 	atomic_set(&bridge->step_refresh_restart_pending, 0);
+	atomic_set(&bridge->step_refresh_stage_error, 0);
 	spin_unlock_irqrestore(&bridge->step_refresh_lock, irq_flags);
 	cancel_delayed_work_sync(&bridge->step_refresh_work);
 
