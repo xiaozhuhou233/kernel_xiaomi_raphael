@@ -4953,6 +4953,7 @@ static ssize_t sysfs_dynamic_dsi_clk_read(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	int rc = 0;
+	u32 clk_rate = 0;
 	struct dsi_display *display;
 	struct dsi_display_ctrl *m_ctrl;
 	struct dsi_ctrl *ctrl;
@@ -4968,12 +4969,10 @@ static ssize_t sysfs_dynamic_dsi_clk_read(struct device *dev,
 	m_ctrl = &display->ctrl[display->cmd_master_idx];
 	ctrl = m_ctrl->ctrl;
 	if (ctrl)
-		display->cached_clk_rate = ctrl->clk_freq.byte_clk_rate
-					     * 8;
+		clk_rate = ctrl->clk_freq.byte_clk_rate * 8;
 
-	rc = snprintf(buf, PAGE_SIZE, "%d\n", display->cached_clk_rate);
-	pr_debug("%s: read dsi clk rate %d\n", __func__,
-		display->cached_clk_rate);
+	rc = snprintf(buf, PAGE_SIZE, "%u\n", clk_rate);
+	pr_debug("%s: read dsi clk rate %u\n", __func__, clk_rate);
 
 	mutex_unlock(&display->display_lock);
 
