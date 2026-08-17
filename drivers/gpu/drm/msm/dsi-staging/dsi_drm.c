@@ -156,6 +156,7 @@ static void dsi_bridge_step_refresh_latch_error(struct dsi_bridge *bridge,
 	if (crtc && crtc->state)
 		rate = dsi_bridge_mode_vrefresh(&crtc->state->adjusted_mode);
 
+	atomic_set(&bridge->step_refresh_blocked, 1);
 	if (atomic_cmpxchg(&bridge->step_refresh_stage_error, 0, rc) == 0)
 		pr_err("[step90] stage error latched during %s at %u Hz flags=0x%x rc=%d\n",
 			action, rate, flags, rc);
@@ -395,6 +396,7 @@ static int dsi_bridge_step_refresh_commit(struct dsi_bridge *bridge,
 	struct drm_device *dev;
 	u32 current_flags, current_rate, requested_rate;
 	int rc = 0, attempt = 0;
+	int stage_rc;
 
 	if (!bridge || !bridge->display || !bridge->base.encoder)
 		return -EINVAL;
@@ -486,6 +488,12 @@ retry:
 	state = NULL;
 	if (rc == -EDEADLK)
 		goto deadlock;
+	stage_rc = atomic_read(&bridge->step_refresh_stage_error);
+	if (!rc && stage_rc) {
+		rc = stage_rc;
+		pr_err("[step90] atomic stage completed with bridge error rc=%d\n",
+			rc);
+	}
 	if (rc)
 		pr_err("[step90] forced atomic modeset failed, rc=%d\n", rc);
 	else
