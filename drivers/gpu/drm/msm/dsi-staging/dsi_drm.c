@@ -117,17 +117,17 @@ static bool dsi_bridge_step_refresh_host_ready(struct dsi_display *display)
 }
 
 static bool dsi_bridge_step_refresh_generation_current(
-		struct dsi_bridge *bridge, u32 generation)
+	struct dsi_bridge *bridge, u32 generation)
 {
 	unsigned long irq_flags;
-	bool current;
+	bool is_current;
 
 	spin_lock_irqsave(&bridge->step_refresh_lock, irq_flags);
-	current = !bridge->step_refresh_shutdown &&
+	is_current = !bridge->step_refresh_shutdown &&
 		bridge->step_refresh_generation == generation;
 	spin_unlock_irqrestore(&bridge->step_refresh_lock, irq_flags);
 
-	return current;
+	return is_current;
 }
 
 static bool dsi_bridge_step_refresh_snapshot(struct dsi_bridge *bridge,
