@@ -1,4 +1,4 @@
-﻿name: Build Raphael Stock Kernel
+name: Build Raphael Stock Kernel
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build Raphael 60/72/84/90Hz
+    name: Build Raphael 60/75/90Hz
     runs-on: ubuntu-24.04
 
     # Mark LOCALVERSION as explicitly set so scripts/setlocalversion does not
@@ -31,14 +31,18 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Enable Raphael 60/72/84/90 Hz modes
+      - name: Enable Raphael 60/75/90 Hz modes
         run: |
           python3 scripts/enable-raphael-90hz.py
 
           echo "=== Added refresh-rate modes ==="
           grep -R -n -E \
-            'timing@[123]|panel-framerate = <(60|72|84|90)>|panel-clockrate = <(1200000000|1400000000|1500000000)>' \
+            'timing@[012]|panel-framerate = <(60|75|90)>|panel-clockrate = <(1100000000|1103000000|1250000000|1500000000)>' \
             arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display/dsi-panel-ss-fhd-ea8076*-cmd.dtsi
+
+          echo "=== FFC check: 90 Hz cmd 13 98/65 45, global 13 A6/65 8B ==="
+          grep -R -n -E '13 98|65 45|13 A6|65 8B' \
+            arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display/dsi-panel-ss-fhd-ea8076*-cmd.dtsi || true
 
       - name: Check source version
         run: |
@@ -505,7 +509,7 @@ jobs:
           scripts/package-anykernel3.sh \
             out/arch/arm64/boot/Image.gz-dtb \
             out/arch/arm64/boot/dtbo.img \
-            out/raphael-kamioc-72-84-90hz-ksunext-ak3.zip
+            out/raphael-kamioc-60-75-90hz-ksunext-ak3.zip
 
       # ============================================================
       # Diagnostics
@@ -584,15 +588,15 @@ jobs:
             ls -lh out/arch/arm64/boot/dtbo.img
           fi
 
-      - name: Upload 60/72/84/90 Hz kernel
+      - name: Upload 60/75/90 Hz kernel
         if: ${{ inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
-          name: raphael-kamioc-60-72-84-90hz-test
+          name: raphael-kamioc-60-75-90hz-test
           if-no-files-found: warn
           path: |
-            out/raphael-kamioc-72-84-90hz-ksunext-ak3.zip
-            out/raphael-kamioc-72-84-90hz-ksunext-ak3.zip.sha256
+            out/raphael-kamioc-60-75-90hz-ksunext-ak3.zip
+            out/raphael-kamioc-60-75-90hz-ksunext-ak3.zip.sha256
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image
