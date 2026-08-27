@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
-"""Add KamiOC-derived 72/84/90 Hz modes to Raphael SS EA8076 panels.
+"""Add a 90 Hz mode to Raphael SS EA8076 panels.
 
-KamiOC's old-tree DTBO cannot target the EvolutionX overlay nodes directly.
-This transformer keeps the current stable 60 Hz node and transplants KamiOC's
-known-working high-refresh porches, clocks and oscillator commands.  Explicit
-transfer times emulate the newer DSI clock calculation in the older driver.
+The EA8076 DDIC uses two oscillator/FFC configurations: B9 for 60 Hz and
+A9 for the high-refresh range.  Every previous attempt to switch to 90 Hz
+at runtime (DMS timing-switch, bridged DMS, force_update, pre_switch)
+failed because the DDIC cannot lock a large link-clock step together with
+an oscillator change in one go: a direct B9 -> A9 switch with a 1.1 ->
+1.65 GHz clock jump never locks, and the panel silently stays at 60 Hz.
+
+What does work (verified on Bool-X, which ships 90 Hz on this panel): the
+panel is *initialized* at the target rate during bring-up, with the B9
+oscillator command and a 1.65 GHz link clock.  The DDIC accepts B9 at
+1.65 GHz on cold start.  This transformer therefore adds a 90 Hz timing
+node that keeps the stock 60 Hz ON command (B9 FFC) byte-for-byte and
+only raises the link clock, frame rate, porches and PHY timings to the
+Bool-X 90 Hz set.
+
+The refresh switch itself is handled by the driver: a rate change is
+forced through the full panel re-init path (cold start), never through
+the light DMS timing-switch, so 90 Hz engages and survives power cycles.
 """
 
 from pathlib import Path
@@ -20,29 +34,26 @@ PANELS = {
         "clock_60": 1_100_000_000,
         "d1_60": "0F",
         "d1_90": "0F",
-        "phy_90": "00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A",
+        "phy_90": "00 24 0A 0A 26 25 09 0A 06 02 04 00 1E 1A",
     },
     "dsi-panel-ss-fhd-ea8076-global-cmd.dtsi": {
         "v_pulse_60": 27,
         "clock_60": 1_103_000_000,
         "d1_60": "11",
         "d1_90": "0F",
-        "phy_90": "00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A",
+        "phy_90": "00 24 0A 0A 26 25 09 0A 06 02 04 00 1E 1A",
     },
 }
 
+# Only 60 (base timing@0) and 90 Hz.  The intermediate 72/84 Hz modes are
+# dropped: they share the A9 high-refresh FFC while running at much lower
+# clocks, desynchronizing the DDIC oscillator from the link rate, and they
+# only served as manual stepping stones for the broken runtime switch.
 MODES = (
-    {"node": 1, "fps": 72, "clock": 1_200_000_000, "xfer": 12_635},
-    {"node": 2, "fps": 84, "clock": 1_400_000_000, "xfer": 10_829},
-    {"node": 3, "fps": 90, "clock": 1_650_000_000, "xfer": 10_108,
-     # Bool-X verified 90 Hz timing (ocd DTBO timing@1).  The clock is
-     # raised to 1.65 GHz to match the FFC ("8A 18") that the timing-switch
-     # command programs, and the porches/PHY timings are Bool-X's exact
-     # values.  At 1.5 GHz (previous KamiOC value) the DDIC sees a ~9%
-     # FFC/clock mismatch and its internal PLL falls back to a low scan
-     # rate (observed: TE reports 90 Hz but the panel updates ~30 fps).
-     "porches": {"h_front": 96, "h_back": 40, "h_pulse": 32,
-                 "v_back": 4, "v_front": 25, "v_pulse": 1},
+    {"node": 1, "fps": 90, "clock": 1_650_000_000, "xfer": 10_108,
+     # Bool-X 90 Hz porch set (paired with B9 FFC @ 1.65 GHz cold start).
+     "porches": {"h_front": 32, "h_back": 16, "h_pulse": 16,
+                 "v_back": 16, "v_front": 8, "v_pulse": 8},
      "phy": "00 24 0A 0A 26 25 09 0A 06 02 04 00 1E 1A"},
 )
 
@@ -81,13 +92,18 @@ def timing_block(text: str) -> tuple[int, int, str]:
 
 def add_switch_command(block: str, d1: str) -> str:
     anchor = '\t\t\t\tqcom,mdss-dsi-on-command-state = "dsi_lp_mode";'
+    # The timing-switch FFC stays byte-identical to the ON-command FFC
+    # (B9, 1A B8 tail).  The 8A 18 tail latches the DDIC oscillator at
+    # ~52 Hz regardless of the link rate.  The driver does not use this
+    # command for 60<->90 switches (it forces a full panel re-init), but
+    # keeping it correct prevents any DMS path from corrupting the state.
     switch = f'''\n
 \t\t\t\tqcom,mdss-dsi-timing-switch-command = [
 \t\t\t\t\t39 00 00 00 00 00 03 F0 5A 5A
 \t\t\t\t\t39 00 00 00 00 00 03 FC 5A 5A
 \t\t\t\t\t39 00 00 00 00 00 02 B0 23
 \t\t\t\t\t39 00 00 00 00 00 02 D1 {d1}
-\t\t\t\t\t39 00 00 00 00 00 0C E9 11 55 A6 75 A3 B9 A1 4A 00 8A 18
+\t\t\t\t\t39 00 00 00 00 00 0C E9 11 55 A6 75 A3 B9 A1 4A 00 1A B8
 \t\t\t\t\t39 00 00 00 00 00 03 F0 A5 A5
 \t\t\t\t\t39 01 00 00 00 00 03 FC A5 A5];
 \t\t\t\tqcom,mdss-dsi-timing-switch-command-state = "dsi_lp_mode";'''
@@ -131,22 +147,11 @@ def make_high_refresh(
     for old, new in replacements:
         high = replace_once(high, old, new, f"{mode['fps']} Hz timing")
 
-    high = high.replace(f"02 D1 {cfg['d1_60']}", f"02 D1 {cfg['d1_90']}")
-    if high.count(f"02 D1 {cfg['d1_90']}") < 2:
-        raise RuntimeError(f"{mode['fps']} Hz D1 commands were not updated")
-
-    high = replace_once(
-        high,
-        "A3 B9 A1 4A 00 1A B8",
-        "A3 A9 A1 4A 00 1A B8",
-        "KamiOC high-refresh panel-on oscillator",
-    )
-    high = replace_once(
-        high,
-        "A3 B9 A1 4A 00 8A 18",
-        "A3 A9 A1 4A 00 8A 18",
-        "KamiOC high-refresh timing switch oscillator",
-    )
+    # The 90 Hz timing keeps the stock ON command untouched: the DDIC
+    # accepts the B9 oscillator at the 1.65 GHz link rate when the panel
+    # is brought up (Bool-X verified).  Do NOT switch the FFC to the A9
+    # oscillator - that is what broke the runtime switch and required the
+    # 60 -> 72 -> 90 stepping.
 
     jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
     extra = f'''{jitter}
@@ -167,7 +172,7 @@ def patch_panel(path: Path, cfg: dict[str, object]) -> None:
     high_modes = [make_high_refresh(base, cfg, mode) for mode in MODES]
     text = text[:start] + base + "\n\n" + "\n\n".join(high_modes) + text[end:]
     path.write_text(text)
-    print(f"Enabled 60/72/84/90 Hz modes in {path}")
+    print(f"Enabled 60/90 Hz modes in {path}")
 
 
 def main() -> None:

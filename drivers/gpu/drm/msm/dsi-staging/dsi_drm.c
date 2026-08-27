@@ -470,10 +470,24 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_POMS;
 
 		/* No DMS/VRR when drm pipeline is changing */
+		/*
+		 * EA8076 90 Hz: a refresh-rate change must go through the full
+		 * panel re-init (cold start at the target rate), never through
+		 * the light DMS timing-switch.  The DDIC accepts the B9
+		 * oscillator at the 1.65 GHz link rate only when the panel is
+		 * brought up; a runtime B9 -> A9 (or clock-only) jump never
+		 * locks and leaves the panel at 60 Hz while the system reports
+		 * the target rate.  Leaving DMS unset forces DRM to take the
+		 * full modeset path (prepare + enable -> ON command), which is
+		 * the same sequence that boots the panel at the target rate
+		 * and therefore survives display power cycles.
+		 */
 		if (!drm_mode_equal(&cur_mode, adjusted_mode) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_POMS)) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK)) &&
+			(cur_dsi_mode.timing.refresh_rate ==
+			 dsi_mode.timing.refresh_rate) &&
 			(!crtc_state->active_changed ||
 			 display->is_cont_splash_enabled))
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_DMS;
