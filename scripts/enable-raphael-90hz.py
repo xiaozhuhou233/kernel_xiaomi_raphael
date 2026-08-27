@@ -12,7 +12,9 @@ differences from the stock/KamiOC configuration:
       cmd panel:    ON B9 oscillator 13 98 / switch A9 oscillator 65 45
       global panel: ON B9 oscillator 13 A6 / switch A9 oscillator 65 8B
   - 90 Hz D1 byte is 0D (cmd) / 0F (global), PHY timings differ per rate
-  - no qcom,mdss-mdp-transfer-time-us is emitted (HyperOS3 has none)
+  - the old EvolutionX command-mode driver requires an explicit
+    qcom,mdss-mdp-transfer-time-us; values are chosen so its integer
+    1000000 / transfer calculation yields exactly 60/75/90 Hz
 
 This script rewrites the timing section of each panel DTSI to match the
 HyperOS3 dtbo exactly, so 60 -> 90 switching works directly and survives
@@ -60,24 +62,28 @@ PANELS = {
 #   ffc_sw:  the E9 ... tail in the timing-switch command
 # The 90 Hz FFC tail is per-panel (see PANELS.ffc_90_on / ffc_90_sw).
 #
-# No qcom,mdss-mdp-transfer-time-us property is emitted: the HyperOS3 dtbo
-# does not carry it on any of the three timing nodes, so the driver falls back
-# to its DEFAULT_MDP_TRANSFER_TIME (14000 us) uniformly, exactly as HyperOS3.
+# The HyperOS3 dtbo omits this property because its driver uses a different
+# default.  EvolutionX's old command-mode driver falls back to 14000 us, which
+# makes every generated mode calculate the wrong pixel clock.  Use the largest
+# integer transfer time that still gives the requested rate after the driver's
+# integer division: floor(1000000 / xfer) == fps.
 MODES = (
     {"node": 0, "fps": 60, "clock_from_cfg": "clock_60",
-     "clock": None,
+     "clock": None, "xfer": 16666,
      "d1_from_cfg": "d1_60",
      "ffc_on": "A3 B9 A1 4A 00 1A B8",
      "ffc_sw": "A3 B9 A1 4A 00 8A 18",
      "phy_from_cfg": "phy_60",
      "replace_base": True},
     {"node": 1, "fps": 75, "clock": 1_250_000_000,
+     "xfer": 13333,
      "d1_from_cfg": "d1_75",
      "ffc_on": "A3 A9 A1 4A 00 1A B8",
      "ffc_sw": "A3 A9 A1 4A 00 8A 18",
      "phy_from_cfg": "phy_60",
      "replace_base": False},
     {"node": 2, "fps": 90, "clock": 1_500_000_000,
+     "xfer": 11111,
      "d1_from_cfg": "d1_90",
      "ffc_on_from_cfg": "ffc_90_on",
      "ffc_sw_from_cfg": "ffc_90_sw",
@@ -159,9 +165,14 @@ def apply_mode(block, cfg, mode):
     replacements.append(("qcom,mdss-dsi-panel-framerate = <60>;",
                          "qcom,mdss-dsi-panel-framerate = <%d>;" % mode["fps"]))
 
-    # Clock rate only (HyperOS3 emits no mdp-transfer-time-us).
+    # The old driver derives its command-mode pixel clock from this property.
+    # Strip the cloned value first, then add the mode-specific value exactly
+    # once next to the clockrate.
+    block = re.sub(r'\n\t\t\t\tqcom,mdss-mdp-transfer-time-us = <\d+>;', '', block)
     replacements.append(("qcom,mdss-dsi-panel-clockrate = <%d>;" % cfg["clock_60"],
-                         "qcom,mdss-dsi-panel-clockrate = <%d>;" % clock))
+                         "qcom,mdss-dsi-panel-clockrate = <%d>;\n"
+                         "\t\t\t\tqcom,mdss-mdp-transfer-time-us = <%d>;" %
+                         (clock, mode["xfer"])))
 
     for old, new in replacements:
         if old in block:
@@ -222,8 +233,31 @@ def patch_panel(path, cfg):
         modes_extra.append(cloned)
 
     text = text[:start] + base_60 + "\n\n" + "\n\n".join(modes_extra) + text[end:]
+    validate_panel(text, path, cfg)
     path.write_text(text)
     print("Enabled 60/75/90 Hz modes in %s" % path)
+
+
+def validate_panel(text, path, cfg):
+    for mode in MODES:
+        marker = "timing@%d{" % mode["node"]
+        start = text.find(marker)
+        if start < 0:
+            raise RuntimeError("%s: missing %s" % (path, marker))
+        end = text.find("\n\t\t\t};", start)
+        if end < 0:
+            raise RuntimeError("%s: unterminated %s" % (path, marker))
+        block = text[start:end]
+        expected = (
+            "qcom,mdss-dsi-panel-framerate = <%d>;" % mode["fps"],
+            "qcom,mdss-mdp-transfer-time-us = <%d>;" % mode["xfer"],
+        )
+        missing = [item for item in expected if item not in block]
+        if missing:
+            raise RuntimeError("%s: %s missing %s" % (path, marker, missing))
+        if 1000000 // mode["xfer"] != mode["fps"]:
+            raise RuntimeError("%s: invalid transfer-time for %d Hz" %
+                               (path, mode["fps"]))
 
 
 def main():
