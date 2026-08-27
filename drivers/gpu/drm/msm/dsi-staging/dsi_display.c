@@ -18,6 +18,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/err.h>
+#include <linux/delay.h>
 
 #include <linux/msm_drm_notify.h>
 
@@ -1089,6 +1090,16 @@ int dsi_display_set_power(struct drm_connector *connector,
 			display->panel->power_mode == SDE_MODE_DPMS_LP2) {
 			msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &notify_data);
 			rc = dsi_panel_set_nolp(display->panel);
+			/*
+			 * The nolp sequence does not reprogram the DDIC
+			 * oscillator, so a high-refresh mode would come back
+			 * at 60 Hz on the panel while the system reports the
+			 * target rate.  Re-apply the 60 -> 72 -> 90 bridge.
+			 */
+			if (!rc && display->panel->cur_mode &&
+			    display->panel->cur_mode->timing.refresh_rate > 72)
+				rc = dsi_display_switch_refresh_with_bridge(
+						display);
 			msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &notify_data);
 		}
 		break;
@@ -6838,6 +6849,207 @@ int dsi_display_set_tpg_state(struct dsi_display *display, bool enable)
 
 	display->is_tpg_enabled = enable;
 error:
+	return rc;
+}
+
+static int dsi_display_pre_switch(struct dsi_display *display);
+
+/*
+ * Program the link clocks for @m and send its timing-switch command.
+ * panel->cur_mode is temporarily pointed at @m and restored on return.
+ *
+ * The EA8076 DDIC cannot lock a large link-clock step together with an
+ * oscillator change in a single switch: a direct 60 -> 90 Hz switch
+ * (B9->A9 oscillator plus 1.1 -> 1.65 GHz link clock) fails and the
+ * panel stays at 60 Hz, while stepping through the 72 Hz mode works.
+ * The 72 Hz mode therefore acts as a bridging step: program the 72 Hz
+ * link clock, send its timing-switch FFC, let the PLL settle, then
+ * repeat for the target rate.  This reproduces the manually verified
+ * 60 -> 72 -> 90 sequence that is the only configuration ever observed
+ * producing a real 90 Hz scan on this panel.
+ */
+static int dsi_display_set_link_and_switch(struct dsi_display *display,
+					   struct dsi_display_mode *m)
+{
+	int rc = 0, i;
+	struct dsi_display_ctrl *ctrl;
+	struct dsi_display_mode *saved = display->panel->cur_mode;
+
+	display->panel->cur_mode = m;
+
+	rc = dsi_panel_get_host_cfg_for_mode(display->panel, m,
+					     &display->config);
+	if (rc) {
+		pr_err("[%s] bridge: host cfg for %u Hz failed, rc=%d\n",
+		       display->name, m->timing.refresh_rate, rc);
+		goto out;
+	}
+
+	display_for_each_ctrl(i, display) {
+		ctrl = &display->ctrl[i];
+		if (!ctrl || !ctrl->ctrl)
+			continue;
+		rc = dsi_ctrl_update_host_config(ctrl->ctrl, &display->config,
+						 0, display->dsi_clk_handle);
+		if (rc) {
+			pr_err("[%s] bridge: link update for %u Hz failed, rc=%d\n",
+			       display->name, m->timing.refresh_rate, rc);
+			goto out;
+		}
+	}
+
+	/*
+	 * Apply the new link rates exactly like the standard DMS path does
+	 * (dsi_display_pre_switch: core clk on, ctrl timing update, clock
+	 * source select, link clk on).  The 60 -> 72 Hz switch visibly works
+	 * through this path; force_update's link off->on cycle instead left
+	 * the DDIC at an anomalous ~46 Hz TE.  Do NOT turn the link off here.
+	 */
+	pr_info("[%s] bridge: pre_switch path for %u Hz\n",
+		display->name, m->timing.refresh_rate);
+	rc = dsi_display_pre_switch(display);
+	if (rc) {
+		pr_err("[%s] bridge: pre_switch for %u Hz failed, rc=%d\n",
+		       display->name, m->timing.refresh_rate, rc);
+		goto out;
+	}
+
+	rc = dsi_panel_switch(display->panel);
+	if (rc)
+		pr_err("[%s] bridge: switch cmd for %u Hz failed, rc=%d\n",
+		       display->name, m->timing.refresh_rate, rc);
+	/* Let the DDIC apply the FFC and lock its PLL before the next step. */
+	msleep(500);
+out:
+	display->panel->cur_mode = saved;
+	return rc;
+}
+
+/*
+ * Route any switch to a rate above 72 Hz through a 72 Hz bridging step.
+ * Used for runtime DMS switches and to re-apply the refresh rate after a
+ * display wakeup, where the panel re-initializes at the base rate and the
+ * target high-refresh mode must be re-stepped 60 -> 72 -> 90.
+ */
+int dsi_display_switch_refresh_with_bridge(struct dsi_display *display)
+{
+	struct dsi_display_mode *target = display->panel->cur_mode;
+	struct dsi_display_mode *bridge = NULL;
+	struct dsi_display_mode saved;
+	int i, rc;
+
+	if (!target || target->timing.refresh_rate <= 72)
+		return dsi_panel_switch(display->panel);
+
+	if (display->modes) {
+		for (i = 0; i < display->panel->num_display_modes; i++) {
+			if (display->modes[i].timing.refresh_rate == 72) {
+				bridge = &display->modes[i];
+				break;
+			}
+		}
+	}
+	if (!bridge) {
+		pr_warn("[%s] no 72 Hz bridging mode, switching directly\n",
+			display->name);
+		return dsi_panel_switch(display->panel);
+	}
+
+	saved = *target;
+	pr_info("[%s] bridged switch to %u Hz via 72 Hz\n",
+		display->name, saved.timing.refresh_rate);
+
+	rc = dsi_display_set_link_and_switch(display, bridge);
+	/* 500 ms settle inside the helper + 500 ms here = ~1 s between the
+	 * two FFC applications, matching the pacing of the manually verified
+	 * 60 -> 72 -> 90 sequence (the DDIC PLL needs time to re-lock).
+	 */
+	if (!rc)
+		msleep(500);
+	if (!rc)
+		rc = dsi_display_set_link_and_switch(display, &saved);
+
+	return rc;
+}
+
+/*
+ * Bring the panel up at 60 Hz first, then bridge 60 -> 72 -> 90 to the
+ * target rate.  Used on the full wakeup path (DPMS OFF -> ON): the panel
+ * re-initializes after off, and a cold start at the 90 Hz timing leaves
+ * the DDIC at 60 Hz while the system reports 90 (the large oscillator +
+ * clock step cannot be applied in a single ON command).  Starting at the
+ * stable 60 Hz mode and then re-applying the verified 60 -> 72 -> 90
+ * bridge makes the high refresh rate stick across display power cycles.
+ */
+int dsi_display_prepare_refresh_with_bridge(struct dsi_display *display,
+		struct dsi_display_mode *target)
+{
+	struct dsi_display_mode *m60 = NULL;
+	struct dsi_display_mode saved;
+	u32 saved_clk_rate;
+	int i, rc;
+
+	if (!display || !target || !display->panel)
+		return -EINVAL;
+
+	/* find the 60 Hz base mode to cold-start on */
+	if (display->modes) {
+		for (i = 0; i < display->panel->num_display_modes; i++) {
+			if (display->modes[i].timing.refresh_rate == 60) {
+				m60 = &display->modes[i];
+				break;
+			}
+		}
+	}
+	if (!m60) {
+		pr_warn("[%s] no 60 Hz base mode, using direct prepare\n",
+			display->name);
+		rc = dsi_display_prepare(display);
+		if (!rc)
+			rc = dsi_display_enable(display);
+		return rc;
+	}
+
+	saved = *target;
+
+	/* the dynamic clock override would hijack the 60 Hz cold start */
+	saved_clk_rate = display->cached_clk_rate;
+	display->cached_clk_rate = 0;
+
+	/* 1) stable 60 Hz cold start: prepare + ON at the base timing */
+	rc = dsi_display_set_mode(display, m60, 0x0);
+	if (rc) {
+		pr_err("[%s] bridge-prep: set 60 Hz mode failed, rc=%d\n",
+		       display->name, rc);
+		goto out;
+	}
+	rc = dsi_display_prepare(display);
+	if (rc) {
+		pr_err("[%s] bridge-prep: 60 Hz prepare failed, rc=%d\n",
+		       display->name, rc);
+		goto out;
+	}
+	rc = dsi_display_enable(display);
+	if (rc) {
+		pr_err("[%s] bridge-prep: 60 Hz enable failed, rc=%d\n",
+		       display->name, rc);
+		(void)dsi_display_unprepare(display);
+		goto out;
+	}
+
+	/* 2) re-apply the target mode and step 60 -> 72 -> 90 */
+	rc = dsi_display_set_mode(display, &saved, 0x0);
+	if (rc) {
+		pr_err("[%s] bridge-prep: restore %u Hz mode failed, rc=%d\n",
+		       display->name, saved.timing.refresh_rate, rc);
+		goto out;
+	}
+	rc = dsi_display_switch_refresh_with_bridge(display);
+	if (rc)
+		pr_err("[%s] bridge-prep: %u Hz bridge failed, rc=%d\n",
+		       display->name, saved.timing.refresh_rate, rc);
+out:
+	display->cached_clk_rate = saved_clk_rate;
 	return rc;
 }
 

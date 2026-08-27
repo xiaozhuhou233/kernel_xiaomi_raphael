@@ -721,6 +721,36 @@ int dsi_display_cmd_engine_enable(struct dsi_display *display);
 
 int dsi_display_cmd_engine_disable(struct dsi_display *display);
 
+/**
+ * dsi_display_switch_refresh_with_bridge() - switch refresh rate above 72 Hz
+ * @display:   Handle to display.
+ *
+ * The EA8076 DDIC cannot lock a direct 60 -> 90 Hz switch (oscillator
+ * change plus a large link-clock step in one go).  This helper steps the
+ * switch through the 72 Hz mode (60 -> 72 -> 90), the sequence verified
+ * on-device to produce a real 90 Hz scan.  Used both for runtime DMS
+ * switches and to re-apply the refresh rate after a display wakeup.
+ *
+ * Return: Zero on Success.
+ */
+int dsi_display_switch_refresh_with_bridge(struct dsi_display *display);
+
+/**
+ * dsi_display_prepare_refresh_with_bridge() - wake the display at high refresh
+ * @display:   Handle to display.
+ * @target:    Target high-refresh mode to end up at.
+ *
+ * Full wakeup path (DPMS OFF -> ON): the panel re-initializes at the base
+ * timing and a cold start at 90 Hz leaves the DDIC at 60 Hz.  This helper
+ * cold-starts at the stable 60 Hz mode, then re-applies the verified
+ * 60 -> 72 -> 90 bridge so the high refresh rate survives display power
+ * cycles.  Caller must NOT run prepare/enable afterwards.
+ *
+ * Return: Zero on Success.
+ */
+int dsi_display_prepare_refresh_with_bridge(struct dsi_display *display,
+		struct dsi_display_mode *target);
+
 int dsi_host_alloc_cmd_tx_buffer(struct dsi_display *display);
 
 #if defined(CONFIG_MACH_XIAOMI_VAYU) || defined(CONFIG_MACH_XIAOMI_NABU)

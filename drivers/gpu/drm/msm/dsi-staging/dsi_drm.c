@@ -204,6 +204,56 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
+	/*
+	 * EA8076 90 Hz bridging.
+	 *
+	 * The DDIC PLL cannot lock a large link-clock step together with an
+	 * oscillator change in one go: a direct 60 -> 90 Hz switch (B9->A9
+	 * oscillator plus 1.1 -> 1.65 GHz link clock) fails and the panel
+	 * silently stays at 60 Hz, while stepping through the 72 Hz mode
+	 * works (the DDIC accepts the oscillator change together with the
+	 * small 1.1 -> 1.2 GHz step).  The 72 Hz mode therefore acts as a
+	 * bridging step: program its link clock, send its timing-switch,
+	 * let the PLL settle, then repeat for the target rate.  This is the
+	 * manually verified 60 -> 72 -> 90 sequence.
+	 *
+	 * Two paths land here with a refresh rate above 72 Hz:
+	 *  1. runtime DMS switch (mode changed, panel already on): the
+	 *     bridge runs before prepare(), which would otherwise apply the
+	 *     target 1.65 GHz link rate in a single jump from the 60 Hz
+	 *     state before enable() is reached;
+	 *  2. full wakeup (DPMS OFF -> ON, active_changed): the panel
+	 *     re-initializes at the current mode, and a cold start at the
+	 *     90 Hz timing leaves the DDIC at 60 Hz while the system
+	 *     reports 90 Hz.  Bring the panel up at the stable 60 Hz mode
+	 *     first, then re-apply the 60 -> 72 -> 90 bridge so the high
+	 *     refresh rate survives display power cycles.
+	 */
+	if (c_bridge->dsi_mode.timing.refresh_rate > 72 &&
+	    !(c_bridge->dsi_mode.dsi_mode_flags &
+	      (DSI_MODE_FLAG_SEAMLESS | DSI_MODE_FLAG_VRR |
+	       DSI_MODE_FLAG_DYN_CLK))) {
+		if (bridge->encoder->crtc->state->active_changed) {
+			/* full wakeup path: prepare+enable happen inside */
+			rc = dsi_display_prepare_refresh_with_bridge(
+					c_bridge->display,
+					&c_bridge->dsi_mode);
+			if (rc)
+				pr_err("[%d] failed to wake at %u Hz, rc=%d\n",
+					c_bridge->id,
+					c_bridge->dsi_mode.timing.refresh_rate,
+					rc);
+			goto enable_done;
+		} else {
+			/* runtime DMS: bridge before prepare() */
+			rc = dsi_display_switch_refresh_with_bridge(
+					c_bridge->display);
+			if (rc)
+				pr_err("[%d] failed to bridge refresh, rc=%d\n",
+					c_bridge->id, rc);
+		}
+	}
+
 	if (c_bridge->dsi_mode.dsi_mode_flags &
 		(DSI_MODE_FLAG_SEAMLESS | DSI_MODE_FLAG_VRR |
 		 DSI_MODE_FLAG_DYN_CLK)) {
@@ -230,6 +280,7 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	}
 	SDE_ATRACE_END("dsi_display_enable");
 
+enable_done:
 	msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &notify_data);
 
 	rc = dsi_display_splash_res_cleanup(c_bridge->display);

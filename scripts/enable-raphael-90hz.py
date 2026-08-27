@@ -81,13 +81,20 @@ def timing_block(text: str) -> tuple[int, int, str]:
 
 def add_switch_command(block: str, d1: str) -> str:
     anchor = '\t\t\t\tqcom,mdss-dsi-on-command-state = "dsi_lp_mode";'
+    # The timing-switch FFC must be byte-identical to the ON-command FFC
+    # (1A B8 tail).  The 8A 18 tail latches the DDIC oscillator at ~52 Hz
+    # regardless of the DSI link rate (measured on-device: TE stays ~52
+    # after a 60 -> 90 DMS even with the link relocked at 1.65 GHz), while
+    # the ON command's 1A B8 is the only FFC ever observed producing a real
+    # 90 Hz scan.  The 8A 18 variant is what made a direct 60 -> 90 switch
+    # land below 60 Hz in the stock configuration.
     switch = f'''\n
 \t\t\t\tqcom,mdss-dsi-timing-switch-command = [
 \t\t\t\t\t39 00 00 00 00 00 03 F0 5A 5A
 \t\t\t\t\t39 00 00 00 00 00 03 FC 5A 5A
 \t\t\t\t\t39 00 00 00 00 00 02 B0 23
 \t\t\t\t\t39 00 00 00 00 00 02 D1 {d1}
-\t\t\t\t\t39 00 00 00 00 00 0C E9 11 55 A6 75 A3 B9 A1 4A 00 8A 18
+\t\t\t\t\t39 00 00 00 00 00 0C E9 11 55 A6 75 A3 B9 A1 4A 00 1A B8
 \t\t\t\t\t39 00 00 00 00 00 03 F0 A5 A5
 \t\t\t\t\t39 01 00 00 00 00 03 FC A5 A5];
 \t\t\t\tqcom,mdss-dsi-timing-switch-command-state = "dsi_lp_mode";'''
@@ -135,18 +142,14 @@ def make_high_refresh(
     if high.count(f"02 D1 {cfg['d1_90']}") < 2:
         raise RuntimeError(f"{mode['fps']} Hz D1 commands were not updated")
 
-    high = replace_once(
-        high,
-        "A3 B9 A1 4A 00 1A B8",
-        "A3 A9 A1 4A 00 1A B8",
-        "KamiOC high-refresh panel-on oscillator",
-    )
-    high = replace_once(
-        high,
-        "A3 B9 A1 4A 00 8A 18",
-        "A3 A9 A1 4A 00 8A 18",
-        "KamiOC high-refresh timing switch oscillator",
-    )
+    # Both the ON command and the timing-switch command now carry the
+    # 1A B8 FFC tail; switch the oscillator byte (B9 -> A9) in both so the
+    # high-refresh timing uses the A9 oscillator exactly like Bool-X.
+    if high.count("A3 B9 A1 4A 00 1A B8") != 2:
+        raise RuntimeError(
+            "expected FFC in both ON and timing-switch commands")
+    high = high.replace("A3 B9 A1 4A 00 1A B8",
+                        "A3 A9 A1 4A 00 1A B8", 2)
 
     jitter = "\t\t\t\tqcom,mdss-dsi-panel-jitter = <0x5 0x1>;"
     extra = f'''{jitter}
