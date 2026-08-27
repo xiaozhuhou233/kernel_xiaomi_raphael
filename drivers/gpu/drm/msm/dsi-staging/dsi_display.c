@@ -7395,6 +7395,13 @@ int dsi_display_prepare(struct dsi_display *display)
 		return -EINVAL;
 	}
 
+	/* DIAG: confirm which timing the cold start will use. */
+	pr_info("[%s] prepare: vrefresh=%u clk=%llu flags=0x%x splash=%d\n",
+		display->name, display->panel->cur_mode->timing.refresh_rate,
+		display->panel->cur_mode->timing.clk_rate_hz,
+		display->panel->cur_mode->dsi_mode_flags,
+		display->is_cont_splash_enabled);
+
 	SDE_EVT32(SDE_EVTLOG_FUNC_ENTRY);
 	mutex_lock(&display->display_lock);
 
@@ -7852,6 +7859,13 @@ int dsi_display_enable(struct dsi_display *display)
 	mutex_lock(&display->display_lock);
 
 	mode = display->panel->cur_mode;
+
+	/* DIAG: confirm the enable path and target rate. */
+	pr_info("[%s] enable: vrefresh=%u clk=%llu flags=0x%x dms=%d splash=%d\n",
+		display->name, mode->timing.refresh_rate,
+		mode->timing.clk_rate_hz, mode->dsi_mode_flags,
+		!!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS),
+		display->is_cont_splash_enabled);
 
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
 		rc = dsi_panel_switch(display->panel);

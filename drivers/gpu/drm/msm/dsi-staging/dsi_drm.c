@@ -204,6 +204,16 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
+	/* DIAG: log the enable-path decision for the current mode. */
+	pr_info("[endiag] pre_enable: active_changed=%d flags=0x%x "
+		"vrefresh=%u clk=%llu cur_vrefresh=%u\n",
+		bridge->encoder->crtc->state->active_changed,
+		c_bridge->dsi_mode.dsi_mode_flags,
+		c_bridge->dsi_mode.timing.refresh_rate,
+		c_bridge->dsi_mode.timing.clk_rate_hz,
+		c_bridge->display->panel->cur_mode ?
+			c_bridge->display->panel->cur_mode->timing.refresh_rate : 0);
+
 	/*
 	 * EA8076 90 Hz bridging.
 	 *
@@ -253,6 +263,13 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 					c_bridge->id, rc);
 		}
 	}
+
+	/* DIAG: log which refresh-rate path the panel will take. */
+	pr_info("[endiag] pre_enable: target=%u flags=0x%x -> %s\n",
+		c_bridge->dsi_mode.timing.refresh_rate,
+		c_bridge->dsi_mode.dsi_mode_flags,
+		(c_bridge->dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DMS) ?
+			"DMS timing-switch" : "full re-init (cold start)");
 
 	if (c_bridge->dsi_mode.dsi_mode_flags &
 		(DSI_MODE_FLAG_SEAMLESS | DSI_MODE_FLAG_VRR |
