@@ -215,7 +215,12 @@ def apply_mode(block, cfg, mode):
 def patch_panel(path, cfg):
     text = path.read_text()
     if "timing@1{" in text:
-        raise RuntimeError("%s: timing@1 already exists" % path)
+        # The timing nodes are versioned in the source tree as well as being
+        # generated in CI.  Accept an already-transformed tree so rerunning
+        # the workflow remains deterministic.
+        validate_panel(text, path, cfg)
+        print("Raphael 60/75/90 Hz modes already enabled in %s" % path)
+        return
 
     start, end, base = timing_block(text)
 
