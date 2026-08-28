@@ -8,7 +8,7 @@ differences from the stock/KamiOC configuration:
   - 60 Hz base porches are 42/42/12 (symmetric) instead of 64/64/20
   - a panel-phy-timings property is added to the 60 Hz node
   - 75 Hz intermediate at 1.25 GHz with A9 oscillator (1A B8 / 8A 18 FFC)
-  - 90 Hz at 1.5 GHz (not 1.65 GHz) with a distinct FFC:
+  - 90 Hz at 1.65 GHz with a distinct FFC:
       cmd panel:    ON B9 oscillator 13 98 / switch A9 oscillator 65 45
       global panel: ON B9 oscillator 13 A6 / switch A9 oscillator 65 8B
   - 90 Hz D1 byte is 0D (cmd) / 0F (global), PHY timings differ per rate
@@ -82,7 +82,7 @@ MODES = (
      "ffc_sw": "A3 A9 A1 4A 00 8A 18",
      "phy_from_cfg": "phy_60",
      "replace_base": False},
-    {"node": 2, "fps": 90, "clock": 1_500_000_000,
+    {"node": 2, "fps": 90, "clock": 1_650_000_000,
      "xfer": 11111,
      "d1_from_cfg": "d1_90",
      "ffc_on_from_cfg": "ffc_90_on",

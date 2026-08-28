@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build Raphael r12 60/75/90Hz
+    name: Build Raphael r13 60/75/90Hz
     runs-on: ubuntu-24.04
 
     # Mark LOCALVERSION as explicitly set so scripts/setlocalversion does not
@@ -37,7 +37,7 @@ jobs:
 
           echo "=== Added refresh-rate modes ==="
           grep -R -n -E \
-            'timing@[012]|panel-framerate = <(60|75|90)>|panel-clockrate = <(1100000000|1103000000|1250000000|1500000000)>' \
+            'timing@[012]|panel-framerate = <(60|75|90)>|panel-clockrate = <(1100000000|1103000000|1250000000|1650000000)>' \
             arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display/dsi-panel-ss-fhd-ea8076*-cmd.dtsi
 
           echo "=== FFC check: 90 Hz cmd 13 98/65 45, global 13 A6/65 8B ==="
@@ -551,7 +551,7 @@ jobs:
           scripts/package-anykernel3.sh \
             out/arch/arm64/boot/Image.gz-dtb \
             out/arch/arm64/boot/dtbo.img \
-            out/raphael-kamioc-60-75-90hz-ksunext-ak3.zip
+            out/raphael-kamioc-r13-60-75-90hz-ksunext-ak3.zip
 
       # ============================================================
       # Diagnostics
@@ -634,11 +634,11 @@ jobs:
         if: ${{ inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
-          name: raphael-kamioc-60-75-90hz-test
+          name: raphael-kamioc-r13-60-75-90hz-test
           if-no-files-found: warn
           path: |
-            out/raphael-kamioc-60-75-90hz-ksunext-ak3.zip
-            out/raphael-kamioc-60-75-90hz-ksunext-ak3.zip.sha256
+            out/raphael-kamioc-r13-60-75-90hz-ksunext-ak3.zip
+            out/raphael-kamioc-r13-60-75-90hz-ksunext-ak3.zip.sha256
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image
