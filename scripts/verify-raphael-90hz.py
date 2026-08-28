@@ -227,7 +227,7 @@ def verify_panel(nodes: dict[str, dict[str, bytes]], panel_name: str) -> None:
         if cell(timing, "qcom,mdss-dsi-panel-framerate", label) != fps:
             fail(f"{label}: wrong frame rate")
         expected_clock = cfg["clock60"] if index == 0 else (
-            1_250_000_000 if index == 1 else 1_500_000_000
+            1_250_000_000 if index == 1 else 1_650_000_000
         )
         if cell(timing, "qcom,mdss-dsi-panel-clockrate", label) != expected_clock:
             fail(f"{label}: wrong panel clockrate")
