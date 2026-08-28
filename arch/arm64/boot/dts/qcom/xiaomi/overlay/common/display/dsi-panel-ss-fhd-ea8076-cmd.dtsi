@@ -482,7 +482,7 @@
 				qcom,mdss-dsi-v-top-border = <0>;
 				qcom,mdss-dsi-v-bottom-border = <0>;
 				qcom,mdss-dsi-panel-framerate = <90>;
-				qcom,mdss-dsi-panel-clockrate = <1650000000>;
+				qcom,mdss-dsi-panel-clockrate = <1500000000>;
 				qcom,mdss-mdp-transfer-time-us = <11111>;
 				qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
 				qcom,mdss-dsi-panel-phy-timings = [00 31 0D 0D 2B 28 0D 0E 09 02 04 00 27 1C];
