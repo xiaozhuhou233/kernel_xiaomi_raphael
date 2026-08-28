@@ -387,6 +387,7 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 	struct drm_display_mode cur_mode;
 	struct drm_crtc_state *crtc_state;
 	bool clone_mode = false;
+	bool crosses_60hz;
 	struct drm_encoder *encoder;
 
 	crtc_state = container_of(mode, struct drm_crtc_state, mode);
@@ -469,11 +470,26 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 				crtc_state->crtc->state->enable))
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_POMS;
 
+		/*
+		 * EA8076 uses different panel oscillator/FFC states below and
+		 * above 60 Hz.  A light DMS timing-switch can leave the DDIC in
+		 * the old oscillator state even though DRM reports the target
+		 * refresh rate.  Force the normal prepare/enable path for this
+		 * boundary so the target ON command programs the complete 90 Hz
+		 * panel state in one user-visible mode change.
+		 */
+		crosses_60hz =
+			((cur_dsi_mode.timing.refresh_rate <= 60 &&
+			  dsi_mode.timing.refresh_rate > 60) ||
+			 (cur_dsi_mode.timing.refresh_rate > 60 &&
+			  dsi_mode.timing.refresh_rate <= 60));
+
 		/* No DMS/VRR when drm pipeline is changing */
 		if (!drm_mode_equal(&cur_mode, adjusted_mode) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_POMS)) &&
 			(!(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK)) &&
+			!crosses_60hz &&
 			(!crtc_state->active_changed ||
 			 display->is_cont_splash_enabled))
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_DMS;

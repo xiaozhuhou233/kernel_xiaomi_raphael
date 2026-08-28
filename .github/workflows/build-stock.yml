@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build Raphael r14 60/75/90Hz
+    name: Build Raphael r15 60/75/90Hz
     runs-on: ubuntu-24.04
 
     # Mark LOCALVERSION as explicitly set so scripts/setlocalversion does not
@@ -551,7 +551,7 @@ jobs:
           scripts/package-anykernel3.sh \
             out/arch/arm64/boot/Image.gz-dtb \
             out/arch/arm64/boot/dtbo.img \
-            out/raphael-kamioc-r14-60-75-90hz-ksunext-ak3.zip
+            out/raphael-kamioc-r15-60-75-90hz-ksunext-ak3.zip
 
       # ============================================================
       # Diagnostics
@@ -634,11 +634,11 @@ jobs:
         if: ${{ inputs.mode == 'full' }}
         uses: actions/upload-artifact@v4
         with:
-          name: raphael-kamioc-r14-60-75-90hz-test
+          name: raphael-kamioc-r15-60-75-90hz-test
           if-no-files-found: warn
           path: |
-            out/raphael-kamioc-r14-60-75-90hz-ksunext-ak3.zip
-            out/raphael-kamioc-r14-60-75-90hz-ksunext-ak3.zip.sha256
+            out/raphael-kamioc-r15-60-75-90hz-ksunext-ak3.zip
+            out/raphael-kamioc-r15-60-75-90hz-ksunext-ak3.zip.sha256
             out/arch/arm64/boot/Image.gz-dtb
             out/arch/arm64/boot/dtbo.img
             out/arch/arm64/boot/Image

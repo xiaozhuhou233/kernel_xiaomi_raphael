@@ -5229,7 +5229,7 @@ int dsi_panel_switch(struct dsi_panel *panel)
 		pr_err("[%s] failed to send DSI_CMD_SET_TIMING_SWITCH cmds, rc=%d\n",
 		       panel->name, rc);
 	else
-		pr_info("[%s] DSI_CMD_SET_TIMING_SWITCH sent, target vrefresh=%u\n",
+		pr_info("[90hzdiag][%s] DSI_CMD_SET_TIMING_SWITCH sent, target vrefresh=%u\n",
 		       panel->name,
 		       panel->cur_mode ? panel->cur_mode->timing.refresh_rate : 0);
 
@@ -5250,8 +5250,11 @@ int dsi_panel_post_switch(struct dsi_panel *panel)
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_POST_TIMING_SWITCH);
 	if (rc)
-		pr_err("[%s] failed to send DSI_CMD_SET_POST_TIMING_SWITCH cmds, rc=%d\n",
+		pr_err("[90hzdiag][%s] failed to send DSI_CMD_SET_POST_TIMING_SWITCH cmds, rc=%d\n",
 		       panel->name, rc);
+	else
+		pr_info("[90hzdiag][%s] DSI_CMD_SET_POST_TIMING_SWITCH sent\n",
+		       panel->name);
 
 	mutex_unlock(&panel->panel_lock);
 	return rc;

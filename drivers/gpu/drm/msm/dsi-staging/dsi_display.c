@@ -4908,18 +4908,23 @@ int dsi_display_clk_ctrl(void *handle,
 
 static int dsi_display_force_update_dsi_clk(struct dsi_display *display)
 {
+	struct dsi_display_ctrl *m_ctrl;
+	u64 bit_clk_rate = 0;
 	int rc = 0;
 
 	rc = dsi_display_link_clk_force_update_ctrl(display->dsi_clk_handle);
+	m_ctrl = &display->ctrl[display->clk_master_idx];
+	if (m_ctrl->ctrl)
+		bit_clk_rate = m_ctrl->ctrl->clk_freq.byte_clk_rate * 8;
 
 	if (!rc) {
-		pr_info("dsi bit clk has been configured to %d\n",
-			display->cached_clk_rate);
+		pr_info("dsi bit clk has been configured to %llu Hz\n",
+			bit_clk_rate);
 
 		atomic_set(&display->clkrate_change_pending, 0);
 	} else {
-		pr_err("Failed to configure dsi bit clock '%d'. rc = %d\n",
-			display->cached_clk_rate, rc);
+		pr_err("Failed to configure dsi bit clock '%llu'. rc = %d\n",
+			bit_clk_rate, rc);
 	}
 
 	return rc;
@@ -7510,8 +7515,11 @@ int dsi_display_pre_kickoff(struct drm_connector *connector,
 			int ret = 0;
 
 			ret = dsi_ctrl_wait_for_cmd_mode_mdp_idle(ctrl);
-			if (ret)
+			if (ret) {
+				pr_warn("[90hzdiag] DSI%d MDP idle wait failed rc=%d\n",
+					i, ret);
 				goto wait_failure;
+			}
 		}
 
 		/*
