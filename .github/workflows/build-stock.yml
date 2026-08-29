@@ -1,4 +1,4 @@
-﻿name: Build Raphael Stock Kernel
+name: Build Raphael Stock Kernel
 
 on:
   workflow_dispatch:
@@ -558,7 +558,14 @@ jobs:
 
           text = Path("/tmp/raphael-true90.dts").read_text()
 
-          def node_block(source: str, name: str) -> str:
+          def node_blocks(source: str, name: str) -> list[str]:
+              """Extract all matching nodes from a decompiled overlay.
+
+              A compiled DTBO may contain the same node name in more than one
+              overlay fragment. The source DTS has one node, but requiring
+              global uniqueness after dtc decompilation rejects a valid image
+              before its contents can be checked.
+              """
               matches = list(
                   re.finditer(
                       rf"^[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*:[ \t]*)?"
@@ -567,22 +574,22 @@ jobs:
                       re.MULTILINE,
                   )
               )
-              if len(matches) != 1:
-                  raise RuntimeError(
-                      f"{name}: expected one node, found {len(matches)}"
-                  )
-
-              start = matches[0].start()
-              brace = source.find("{", start, matches[0].end())
-              depth = 0
-              for pos in range(brace, len(source)):
-                  if source[pos] == "{":
-                      depth += 1
-                  elif source[pos] == "}":
-                      depth -= 1
-                      if depth == 0:
-                          return source[start:pos + 1]
-              raise RuntimeError(f"{name}: unterminated node")
+              blocks = []
+              for match in matches:
+                  start = match.start()
+                  brace = source.find("{", start, match.end())
+                  depth = 0
+                  for pos in range(brace, len(source)):
+                      if source[pos] == "{":
+                          depth += 1
+                      elif source[pos] == "}":
+                          depth -= 1
+                          if depth == 0:
+                              blocks.append(source[start:pos + 1])
+                              break
+                  else:
+                      raise RuntimeError(f"{name}: unterminated node")
+              return blocks
 
           def cell(block: str, prop: str) -> int:
               match = re.search(
@@ -617,9 +624,14 @@ jobs:
               "qcom,mdss_dsi_ss_fhd_ea8076_global_cmd",
           )
 
-          for panel_name in panel_nodes:
-              panel = node_block(text, panel_name)
-              block = node_block(panel, "timing@3")
+          def validate_panel(panel_name: str, panel: str) -> None:
+              timing = node_blocks(panel, "timing@3")
+              if len(timing) != 1:
+                  raise RuntimeError(
+                      f"{panel_name}: expected one timing@3 node in candidate, "
+                      f"found {len(timing)}"
+                  )
+              block = timing[0]
               for prop, expected in expected_cells.items():
                   actual = cell(block, prop)
                   if actual != expected:
@@ -663,6 +675,31 @@ jobs:
                   r"xiaomi,mdss-dsi-step-refresh-switch\s*;", panel
               ):
                   raise SystemExit(f"{panel_name}: step-refresh switch missing")
+
+          for panel_name in panel_nodes:
+              candidates = node_blocks(text, panel_name)
+              if not candidates:
+                  raise RuntimeError(f"{panel_name}: node not found")
+
+              valid = 0
+              errors = []
+              for index, panel in enumerate(candidates, 1):
+                  try:
+                      validate_panel(panel_name, panel)
+                  except (RuntimeError, SystemExit) as error:
+                      errors.append(f"candidate {index}: {error}")
+                  else:
+                      valid += 1
+
+              if valid == 0:
+                  raise RuntimeError(
+                      f"{panel_name}: no candidate contains the verified true-90 tuple; "
+                      + " | ".join(errors)
+                  )
+              print(
+                  f"{panel_name}: validated {valid} of "
+                  f"{len(candidates)} overlay node candidates"
+              )
 
           print("Compiled Raphael DTBO contains the verified true-90 tuple")
           PY
