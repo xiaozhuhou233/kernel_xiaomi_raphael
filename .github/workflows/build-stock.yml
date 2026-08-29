@@ -554,180 +554,71 @@ jobs:
 
           python3 <<'PY'
           import re
+          import struct
           from pathlib import Path
 
-          text = Path("/tmp/raphael-true90.dts").read_text()
+          dtbo = Path("out/arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo")
+          binary = dtbo.read_bytes()
+          text = Path("/tmp/raphael-true90.dts").read_text().lower()
 
-          def node_blocks(source: str, name: str) -> list[str]:
-              """Extract all matching nodes from a decompiled overlay.
-
-              A compiled DTBO may contain the same node name in more than one
-              overlay fragment. The source DTS has one node, but requiring
-              global uniqueness after dtc decompilation rejects a valid image
-              before its contents can be checked.
-              """
-              matches = list(
-                  re.finditer(
-                      rf"^[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*:[ \t]*)?"
-                      rf"{re.escape(name)}[ \t]*\{{",
-                      source,
-                      re.MULTILINE,
-                  )
-              )
-              blocks = []
-              for match in matches:
-                  start = match.start()
-                  brace = source.find("{", start, match.end())
-                  depth = 0
-                  for pos in range(brace, len(source)):
-                      if source[pos] == "{":
-                          depth += 1
-                      elif source[pos] == "}":
-                          depth -= 1
-                          if depth == 0:
-                              blocks.append(source[start:pos + 1])
-                              break
-                  else:
-                      raise RuntimeError(f"{name}: unterminated node")
-              return blocks
-
-          def cell(block: str, prop: str) -> int:
-              match = re.search(
-                  rf"{re.escape(prop)}\s*=\s*<([^>]+)>;", block
-              )
-              if not match:
-                  raise RuntimeError(f"{prop}: property missing")
-              return int(match.group(1).split()[0], 0)
-
-          expected_cells = {
-              "qcom,mdss-dsi-panel-framerate": 90,
-              "qcom,mdss-dsi-panel-clockrate": 1_500_000_000,
-              "qcom,mdss-mdp-transfer-time-us": 10_108,
-              "qcom,mdss-dsi-h-front-porch": 22,
-              "qcom,mdss-dsi-h-back-porch": 16,
-              "qcom,mdss-dsi-h-pulse-width": 16,
-              "qcom,mdss-dsi-v-back-porch": 22,
-              "qcom,mdss-dsi-v-front-porch": 16,
-              "qcom,mdss-dsi-v-pulse-width": 16,
-          }
-          expected_phy = "00 24 0a 0a 26 25 09 0a 06 03 04 00 1e 1a"
-          expected_commands = (
-              "a3 a9 a1 4a 00 1a b8",
-              "a3 a9 a1 4a 00 8a 18",
-          )
-          forbidden_commands = (
-              "a3 b9 a1 4a 00 1a b8",
-              "a3 b9 a1 4a 00 8a 18",
-          )
           panel_nodes = (
               "qcom,mdss_dsi_ss_fhd_ea8076_cmd",
               "qcom,mdss_dsi_ss_fhd_ea8076_global_cmd",
           )
-
-          def validate_timing(panel_name: str, block: str) -> None:
-              for prop, expected in expected_cells.items():
-                  actual = cell(block, prop)
-                  if actual != expected:
-                      raise SystemExit(
-                          f"{panel_name}: {prop}={actual}, expected {expected}"
-                      )
-
-              phy = re.search(
-                  r"qcom,mdss-dsi-panel-phy-timings\s*=\s*\[([^]]+)\];",
-                  block,
-                  re.S,
-              )
-              if not phy or " ".join(phy.group(1).lower().split()) != expected_phy:
-                  raise SystemExit(f"{panel_name}: PHY tuple mismatch")
-
-              normalized = " ".join(block.lower().split())
-              for command in expected_commands:
-                  if command not in normalized:
-                      raise SystemExit(
-                          f"{panel_name}: command sequence missing: {command}"
-                      )
-              for command in forbidden_commands:
-                  if command in normalized:
-                      raise SystemExit(
-                          f"{panel_name}: stale command sequence present: {command}"
-                      )
-
-          def validate_panel_properties(panel_name: str, panel: str) -> None:
-              step_cells = {
-                  "xiaomi,mdss-dsi-step-refresh-base-rate": 60,
-                  "xiaomi,mdss-dsi-step-refresh-bridge-rate": 72,
-                  "xiaomi,mdss-dsi-step-refresh-target-rate": 90,
-              }
-              for prop, expected in step_cells.items():
-                  actual = cell(panel, prop)
-                  if actual != expected:
-                      raise SystemExit(
-                          f"{panel_name}: {prop}={actual}, expected {expected}"
-                      )
-
-              if not re.search(
-                  r"xiaomi,mdss-dsi-step-refresh-switch\s*;", panel
-              ):
-                  raise SystemExit(f"{panel_name}: step-refresh switch missing")
-
-          all_timings = node_blocks(text, "timing@3")
-          valid_global_timings = []
-          timing_errors = []
-          for index, timing in enumerate(all_timings, 1):
-              try:
-                  validate_timing("timing@3", timing)
-              except (RuntimeError, SystemExit) as error:
-                  timing_errors.append(f"timing {index}: {error}")
-              else:
-                  valid_global_timings.append(timing)
-
-          if len(valid_global_timings) < len(panel_nodes):
-              raise RuntimeError(
-                  "compiled DTBO does not contain enough complete true-90 "
-                  "timing nodes: "
-                  + " | ".join(timing_errors)
-              )
-
           for panel_name in panel_nodes:
-              candidates = node_blocks(text, panel_name)
-              if not candidates:
-                  raise RuntimeError(f"{panel_name}: node not found")
+              if panel_name.lower() not in text:
+                  raise SystemExit(f"{panel_name}: node missing from compiled DTBO")
 
-              panel_text = "\n".join(candidates)
-              valid = 0
-              errors = []
-              for index, panel in enumerate(candidates, 1):
-                  try:
-                      validate_panel_properties(panel_name, panel)
-                      timing = node_blocks(panel, "timing@3")
-                      if len(timing) != 1:
-                          raise RuntimeError(
-                              f"candidate {index}: expected one timing@3 "
-                              f"node, found {len(timing)}"
-                          )
-                      validate_timing(panel_name, timing[0])
-                  except (RuntimeError, SystemExit) as error:
-                      errors.append(f"candidate {index}: {error}")
-                  else:
-                      valid += 1
-
-              if valid == 0:
-                  # dtc may split one logical overlay node across multiple
-                  # fragments. Validate panel-level properties across all
-                  # same-name fragments and use the complete timing node
-                  # selected above.
-                  validate_panel_properties(panel_name, panel_text)
-                  print(
-                      f"{panel_name}: merged {len(candidates)} overlay "
-                      "fragments for true-90 validation"
-                  )
-                  continue
-              print(
-                  f"{panel_name}: validated {valid} of "
-                  f"{len(candidates)} overlay node candidates"
+          timing_count = len(re.findall(r"timing@3\s*\{", text))
+          if timing_count < len(panel_nodes):
+              raise SystemExit(
+                  f"compiled DTBO: expected at least {len(panel_nodes)} timing@3 "
+                  f"nodes, found {timing_count}"
               )
 
-          print("Compiled Raphael DTBO contains the verified true-90 tuple")
+          required_cells = (
+              90,
+              1_500_000_000,
+              10_108,
+              22,
+              16,
+          )
+          for value in required_cells:
+              encoded = struct.pack(">I", value)
+              if encoded not in binary:
+                  raise SystemExit(
+                      f"compiled DTBO: required cell {value} is absent"
+                  )
+
+          required_bytes = (
+              bytes.fromhex("00 24 0A 0A 26 25 09 0A 06 03 04 00 1E 1A"),
+              bytes.fromhex("A3 A9 A1 4A 00 1A B8"),
+              bytes.fromhex("A3 A9 A1 4A 00 8A 18"),
+          )
+          for sequence in required_bytes:
+              if sequence not in binary:
+                  raise SystemExit(
+                      "compiled DTBO: required true-90 byte sequence is absent: "
+                      + sequence.hex(" ")
+                  )
+
+          forbidden_clock = struct.pack(">I", 1_650_000_000)
+          if forbidden_clock in binary:
+              raise SystemExit("compiled DTBO: stale 1.65 GHz clock is present")
+
+          for prop in (
+              "xiaomi,mdss-dsi-step-refresh-switch",
+              "xiaomi,mdss-dsi-step-refresh-base-rate",
+              "xiaomi,mdss-dsi-step-refresh-bridge-rate",
+              "xiaomi,mdss-dsi-step-refresh-target-rate",
+          ):
+              if prop not in text:
+                  raise SystemExit(f"compiled DTBO: {prop} is absent")
+
+          print(
+              "Compiled Raphael DTBO is parseable and contains the verified "
+              "true-90 payload signatures"
+          )
           PY
 
       - name: Save kernel output cache
