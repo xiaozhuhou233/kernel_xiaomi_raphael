@@ -1026,7 +1026,6 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 	int rc = 0;
 	struct dsi_bridge *c_bridge = to_dsi_bridge(bridge);
 	struct dsi_display *display;
-	struct drm_crtc_state *crtc_state;
 
 	if (!bridge) {
 		pr_err("Invalid params\n");
@@ -1062,26 +1061,6 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 		if (c_bridge->dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_POMS)
 			sde_connector_schedule_status_work(display->drm_conn,
 					true);
-	}
-
-	/*
-	 * A normal power-key cycle may disable and re-enable the whole CRTC
-	 * instead of using dsi_display_set_power(). In that path the panel comes
-	 * back with the requested 90 Hz in DRM state, but the EA8076 DDIC may be
-	 * back in its low-rate oscillator state. Re-arm the proven staged resume
-	 * path after the display is live. Do not do this for continuous splash or
-	 * when an existing stage is already active.
-	 */
-	crtc_state = bridge->encoder && bridge->encoder->crtc ?
-		bridge->encoder->crtc->state : NULL;
-	if (!display->is_cont_splash_enabled && crtc_state &&
-		crtc_state->active_changed && display->panel->step_refresh_enabled &&
-		dsi_bridge_mode_vrefresh(&crtc_state->mode) ==
-			display->panel->step_refresh_target_rate &&
-		!(c_bridge->dsi_mode.dsi_mode_flags &
-			DSI_MODE_FLAG_STEP_REFRESH_ACTIVE)) {
-		pr_info("[step90] full-display resume at target rate; queue staged restart\n");
-		dsi_bridge_request_step_refresh_restart(c_bridge);
 	}
 
 #if defined(CONFIG_MACH_XIAOMI_VAYU) || defined(CONFIG_MACH_XIAOMI_NABU)
